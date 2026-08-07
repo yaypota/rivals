@@ -4749,6 +4749,19 @@ local function initialize(Library)
     local RagebotGroupbox = CombatTab:AddLeftGroupbox("Ragebot")
     RagebotGroupbox:AddDropdown("ragebot_priority_targets", { Text = "priority", Values = {"Head", "Body", "Closest"}, Default = "Head" })
     RagebotGroupbox:AddSlider("ragebot_void_spam_hide", { Text = "void spam delay", Min = 0, Max = 1, Default = 0.25, Rounding = 2, Suffix = "s" })
+        RagebotGroupbox:AddToggle("ragebot_enabled", {
+        Text = "Ragebot",
+        Default = false
+    }):AddKeyPicker("ragebot_keybind", {
+        Default = "MB2",
+        Mode = "Hold",
+        Text = "Ragebot Key"
+    })
+
+    RagebotGroupbox:AddToggle("void_spam_enabled", {
+        Text = "Void Spam",
+        Default = false
+    })
     RagebotGroupbox:AddToggle("indicator_ragebot", { Text = "ragebot indicator", Default = false })
         :AddColorPicker("indicator_ragebot_status_color", { Default = Color3.fromRGB(255, 100, 100) })
         :AddColorPicker("indicator_ragebot_text_color", { Default = Color3.fromRGB(255, 255, 255) })
