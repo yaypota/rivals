@@ -5220,3 +5220,42 @@ end
 
 initialize(Library)
 getgenv().UE_LOADED = true
+
+-- ragebot target
+local function getRagebotTarget()
+    local player = game.Players.LocalPlayer
+    local camera = workspace.CurrentCamera
+    local closest = nil
+    local closestDist = math.huge
+    local center = camera.ViewportSize / 2
+
+    for _, other in game.Players:GetPlayers() do
+        if other == player then continue end
+
+        local char = other.Character
+        if not char then continue end
+
+        local root = char:FindFirstChild("HumanoidRootPart")
+        local humanoid = char:FindFirstChild("Humanoid")
+        if not root or not humanoid or humanoid.Health <= 0 then continue end
+
+        local screenPos, onScreen = camera:WorldToViewportPoint(root.Position)
+        if not onScreen then continue end
+
+        local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+
+        if dist < closestDist then
+            closestDist = dist
+            closest = other
+        end
+    end
+
+    return closest
+end
+
+local function fireWeapon()
+    local fighter = State.localFighter
+    if fighter and fighter.EquippedItem and fighter.EquippedItem.shoot then
+        fighter.EquippedItem:shoot()
+    end
+end
