@@ -5213,9 +5213,63 @@ local function initialize(Library)
     end)
 
     SaveManager:LoadAutoloadConfig()
+    
+local ragebotConnection = nil
 
-    Library:Toggle()
-    return Library
+Toggles.ragebot_enabled:OnChanged(function()
+    if ragebotConnection then
+        ragebotConnection:Disconnect()
+        ragebotConnection = nil
+    end
+
+    if not Toggles.ragebot_enabled.Value then
+        return
+    end
+
+    ragebotConnection = game:GetService("RunService").RenderStepped:Connect(function()
+        local target = getRagebotTarget()
+        if not target then return end
+
+        local head = target.Character and target.Character:FindFirstChild("Head")
+        if not head then return end
+
+        local camera = workspace.CurrentCamera
+        camera.CFrame = CFrame.new(
+            camera.CFrame.Position,
+            head.Position
+        )
+
+        fireWeapon()
+    end)
+end)
+-- void spam
+local voidSpamConnection = nil
+
+Toggles.void_spam_enabled:OnChanged(function()
+    if voidSpamConnection then
+        voidSpamConnection:Disconnect()
+        voidSpamConnection = nil
+    end
+
+    if not Toggles.void_spam_enabled.Value then
+        return
+    end
+
+    voidSpamConnection = game:GetService("RunService").Stepped:Connect(function()
+        for _, player in game.Players:GetPlayers() do
+            if player == game.Players.LocalPlayer then continue end
+
+            local char = player.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                char.HumanoidRootPart.CFrame = CFrame.new(0, -1000, 0)
+            end
+        end
+    end)
+end)
+
+Library:Toggle()
+
+return Library
 end
 
 initialize(Library)
