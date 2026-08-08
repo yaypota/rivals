@@ -4721,6 +4721,8 @@ local function initialize(Library)
     if not Library then return end
 
     local Window = Library:CreateWindow("Canvas - left")
+    Window.Holder.ZIndex = 999
+    Window.Holder.Modal = true
 
     local CombatTab = Window:AddTab("Main")
     local VisualsTab = Window:AddTab("Esp")
