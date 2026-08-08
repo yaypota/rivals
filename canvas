@@ -5238,6 +5238,8 @@ Toggles.ragebot_enabled:OnChanged(function()
     if ragebotConnection then
         ragebotConnection:Disconnect()
         ragebotConnection = nil
+        setMouseInputBlocked(false)
+        setMouseVisible(true)
     end
 
     if not Toggles.ragebot_enabled.Value then
