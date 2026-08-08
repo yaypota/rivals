@@ -16,6 +16,25 @@ local TextChatService = game:GetService("TextChatService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+local function setMouseVisible(visible)
+    pcall(function()
+        UserInputService.MouseIconEnabled = visible
+    end)
+end
+local function setMouseInputBlocked(blocked)
+    if blocked then
+        ContextActionService:BindAction("BlockMouseInput", function()
+            return Enum.ContextActionResult.Sink
+        end, false, Enum.UserInputType.MouseButton1, Enum.UserInputType.MouseButton2)
+    else
+        ContextActionService:UnbindAction("BlockMouseInput")
+    end
+end
+local function initializeMouseHandling()
+    setMouseVisible(true)
+    setMouseInputBlocked(false)
+end
+initializeMouseHandling()
 
 local cloneref = cloneref or function(inst) return inst end
 local gethui = gethui or function()
