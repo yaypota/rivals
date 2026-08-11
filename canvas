@@ -90,7 +90,7 @@ local function SafeTeleport(CFrameValue)
 end
 
 local function ApplyMovementSettings()
-    if LocalPlayer.Character then
+    if LocalPlayer and LocalPlayer.Character then
         local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
         if humanoid then
             humanoid.WalkSpeed = walkSpeedValue
@@ -153,6 +153,53 @@ local function SetupMainTab()
         Text = "Player Teleport",
         Description = "Teleports to selected player continuously",
         Default = false,
+        Keybind = {
+            Mode = "Toggle",
+            Key = Enum.KeyCode.T,
+            Callback = function(state)
+                teleportEnabled = state
+                if teleportEnabled then
+                    if selectedPlayer == "No Players" then
+                        Notify("Error", "No players available", 2)
+                        return
+                    end
+                    teleportLoop = RunService.Heartbeat:Connect(function()
+                        if selectedPlayer == "No Players" then return end
+                        local target = nil
+                        for _, v in pairs(Players:GetPlayers()) do
+                            if v.Name == selectedPlayer and v ~= LocalPlayer then
+                                target = v
+                                break
+                            end
+                        end
+                        if not target then return end
+                        if not target.Character then return end
+                        local targetHrp = target.Character:FindFirstChild("HumanoidRootPart")
+                        if not targetHrp then return end
+                        if not LocalPlayer.Character then return end
+                        local myHrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        if not myHrp then return end
+                        local targetPos = targetHrp.Position
+                        local teleportPos = targetPos
+                        if teleportMode == "Behind" then
+                            teleportPos = targetPos - targetHrp.CFrame.LookVector * 3
+                        elseif teleportMode == "Above" then
+                            teleportPos = targetPos + Vector3.new(0, 5, 0)
+                        elseif teleportMode == "Underground" then
+                            teleportPos = targetPos + Vector3.new(0, -3, 0)
+                        end
+                        SafeTeleport(CFrame.new(teleportPos))
+                    end)
+                    Notify("Player Teleport", "Enabled", 1)
+                else
+                    if teleportLoop then
+                        teleportLoop:Disconnect()
+                        teleportLoop = nil
+                    end
+                    Notify("Player Teleport", "Disabled", 1)
+                end
+            end
+        },
         Callback = function(state)
             teleportEnabled = state
             if teleportEnabled then
@@ -258,6 +305,41 @@ local function SetupVoidFeatures()
         Text = "Void Teleport",
         Description = "Teleports to position when in void",
         Default = false,
+        Keybind = {
+            Mode = "Toggle",
+            Key = Enum.KeyCode.V,
+            Callback = function(state)
+                if state and voidSpamActive then
+                    Notify("Error", "Disable Void Spam first", 2)
+                    return
+                end
+                voidTeleportEnabled = state
+                voidTeleportActive = state
+                if voidTeleportEnabled then
+                    if not voidPosition then
+                        voidPosition = CFrame.new(voidX, voidY, voidZ)
+                        Notify("Void Teleport", "Using default position", 2)
+                    end
+                    voidPositionConnection = RunService.Heartbeat:Connect(function()
+                        if not voidTeleportActive then return end
+                        if not LocalPlayer.Character then return end
+                        local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        if not hrp then return end
+                        if hrp.Position.Y < -50 then
+                            SafeTeleport(voidPosition)
+                        end
+                    end)
+                    Notify("Void Teleport", "Enabled", 1)
+                else
+                    voidTeleportActive = false
+                    if voidPositionConnection then
+                        voidPositionConnection:Disconnect()
+                        voidPositionConnection = nil
+                    end
+                    Notify("Void Teleport", "Disabled", 1)
+                end
+            end
+        },
         Callback = function(state)
             if state and voidSpamActive then
                 Notify("Error", "Disable Void Spam first", 2)
@@ -369,6 +451,57 @@ local function SetupVoidFeatures()
         Text = "Void Spam",
         Description = "Spams between void and position",
         Default = false,
+        Keybind = {
+            Mode = "Toggle",
+            Key = Enum.KeyCode.B,
+            Callback = function(state)
+                if state and voidTeleportActive then
+                    Notify("Error", "Disable Void Teleport first", 2)
+                    return
+                end
+                voidSpamEnabled = state
+                voidSpamActive = state
+                if voidSpamEnabled then
+                    if not voidSpamPosition then
+                        Notify("Error", "Set position first", 2)
+                        return
+                    end
+                    isHiding = true
+                    lastSwitch = tick()
+                    voidSpamConnection = RunService.Heartbeat:Connect(function()
+                        if not voidSpamActive then return end
+                        if not LocalPlayer.Character then return end
+                        local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        if not hrp then return end
+                        local currentTime = tick()
+                        if hrp.Position.Y < -50 then
+                            if isHiding then
+                                if currentTime - lastSwitch >= voidHideTime then
+                                    isHiding = false
+                                    lastSwitch = currentTime
+                                    SafeTeleport(CFrame.new(voidSpamPosition))
+                                end
+                            else
+                                if currentTime - lastSwitch >= voidAttackTime then
+                                    isHiding = true
+                                    lastSwitch = currentTime
+                                    local attackPos = voidSpamPosition + voidSpamAttackOffset
+                                    SafeTeleport(CFrame.new(attackPos))
+                                end
+                            end
+                        end
+                    end)
+                    Notify("Void Spam", "Enabled", 1)
+                else
+                    voidSpamActive = false
+                    if voidSpamConnection then
+                        voidSpamConnection:Disconnect()
+                        voidSpamConnection = nil
+                    end
+                    Notify("Void Spam", "Disabled", 1)
+                end
+            end
+        },
         Callback = function(state)
             if state and voidTeleportActive then
                 Notify("Error", "Disable Void Teleport first", 2)
@@ -450,6 +583,25 @@ local function SetupPlayerTab()
         Text = "Infinity Jump",
         Description = "Allows unlimited jumps (hold space)",
         Default = false,
+        Keybind = {
+            Mode = "Toggle",
+            Key = Enum.KeyCode.I,
+            Callback = function(state)
+                infinityJumpEnabled = state
+                if infinityJumpEnabled then
+                    if LocalPlayer.Character then
+                        local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
+                        if humanoid then
+                            humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+                            humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+                        end
+                    end
+                    Notify("Infinity Jump", "Hold Space to jump", 2)
+                else
+                    Notify("Infinity Jump", "Disabled", 1)
+                end
+            end
+        },
         Callback = function(state)
             infinityJumpEnabled = state
             if infinityJumpEnabled then
@@ -493,6 +645,13 @@ local function SetupSettingsTab()
         Text = "Show Notifications",
         Description = "Toggle notifications on/off",
         Default = true,
+        Keybind = {
+            Mode = "Toggle",
+            Key = Enum.KeyCode.N,
+            Callback = function(state)
+                showNotifications = state
+            end
+        },
         Callback = function(state)
             showNotifications = state
         end
@@ -636,7 +795,7 @@ local function SetupSettingsTab()
 end
 
 local function onCharacterAdded()
-    task.wait(0.1)
+    task.wait(0.3)
     ApplyMovementSettings()
     if infinityJumpEnabled then
         if LocalPlayer.Character then
@@ -652,7 +811,7 @@ end
 LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
 
 if LocalPlayer.Character then
-    task.wait(0.1)
+    task.wait(0.3)
     ApplyMovementSettings()
 end
 
