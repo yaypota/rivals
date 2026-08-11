@@ -1,6 +1,6 @@
-local Library = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/Library.lua'))()
-local SaveManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/SaveManager.lua'))()
-local ThemeManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/ThemeManager.lua'))()
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/Library.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/SaveManager.lua"))()
+local ThemeManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/ThemeManager.lua"))()
 
 local Window = Library:CreateWindow({
     Title = "Rivals Utility",
@@ -21,22 +21,35 @@ local PlayerRightGroup = PlayerTab:AddRightGroupbox("Jump")
 local SettingsGroup = SettingsTab:AddLeftGroupbox("Configuration")
 local UISettingsGroup = SettingsTab:AddRightGroupbox("UI Settings")
 
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
 local teleportEnabled = false
 local teleportLoop = nil
 local selectedPlayer = nil
 local teleportMode = "Behind"
 
+local function GetTargetPlayer(name)
+    for _, v in pairs(Players:GetPlayers()) do
+        if v.Name == name and v ~= LocalPlayer then
+            return v
+        end
+    end
+    return nil
+end
+
 MainLeftGroup:AddDropdown("Target Player", {
     Text = "Target Player",
     Description = "Select player to teleport to",
     Values = function()
-        local players = {}
-        for _, v in ipairs(game.Players:GetPlayers()) do
-            if v ~= game.Players.LocalPlayer then
-                table.insert(players, v.Name)
+        local list = {}
+        for _, v in pairs(Players:GetPlayers()) do
+            if v ~= LocalPlayer then
+                table.insert(list, v.Name)
             end
         end
-        return players
+        return list
     end,
     Default = "",
     Callback = function(value)
@@ -60,18 +73,12 @@ MainLeftGroup:AddToggle("Player Teleport", {
     Default = false,
     Callback = function(state)
         teleportEnabled = state
-        local player = game.Players.LocalPlayer
         if teleportEnabled then
-            teleportLoop = game:GetService("RunService").Heartbeat:Connect(function()
-                if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
-                local target = nil
-                for _, v in ipairs(game.Players:GetPlayers()) do
-                    if v.Name == selectedPlayer and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
-                        target = v
-                        break
-                    end
-                end
+            teleportLoop = RunService.Heartbeat:Connect(function()
+                local target = GetTargetPlayer(selectedPlayer)
                 if not target then return end
+                if not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then return end
+                if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
                 local targetPos = target.Character.HumanoidRootPart.Position
                 local teleportPos = targetPos
                 if teleportMode == "Behind" then
@@ -81,7 +88,7 @@ MainLeftGroup:AddToggle("Player Teleport", {
                 elseif teleportMode == "Underground" then
                     teleportPos = targetPos + Vector3.new(0, -3, 0)
                 end
-                player.Character.HumanoidRootPart.CFrame = CFrame.new(teleportPos)
+                LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(teleportPos)
             end)
         else
             if teleportLoop then
@@ -147,14 +154,13 @@ MainRightGroup:AddToggle("Void Teleport", {
     Description = "Teleports to XYZ position when falling into void",
     Default = false,
     Callback = function(state)
-        local player = game.Players.LocalPlayer
         if state then
             if not voidPosition then return end
-            voidPositionConnection = game:GetService("RunService").Heartbeat:Connect(function()
-                if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
-                local humanoidRootPart = player.Character.HumanoidRootPart
-                if humanoidRootPart.Position.Y < -50 then
-                    humanoidRootPart.CFrame = voidPosition
+            voidPositionConnection = RunService.Heartbeat:Connect(function()
+                if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
+                local hrp = LocalPlayer.Character.HumanoidRootPart
+                if hrp.Position.Y < -50 then
+                    hrp.CFrame = voidPosition
                 end
             end)
         else
@@ -202,9 +208,8 @@ MainRightGroup:AddButton({
     Text = "Set Void Spam Position",
     Description = "Sets position for void spam",
     Func = function()
-        local player = game.Players.LocalPlayer
-        if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            voidSpamPosition = player.Character.HumanoidRootPart.Position
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            voidSpamPosition = LocalPlayer.Character.HumanoidRootPart.Position
         end
     end
 })
@@ -215,27 +220,26 @@ MainRightGroup:AddToggle("Void Spam", {
     Default = false,
     Callback = function(state)
         voidSpamEnabled = state
-        local player = game.Players.LocalPlayer
         if voidSpamEnabled then
             if not voidSpamPosition then return end
             isHiding = true
             lastSwitch = tick()
-            voidSpamConnection = game:GetService("RunService").Heartbeat:Connect(function()
-                if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
-                local humanoidRootPart = player.Character.HumanoidRootPart
+            voidSpamConnection = RunService.Heartbeat:Connect(function()
+                if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
+                local hrp = LocalPlayer.Character.HumanoidRootPart
                 local currentTime = tick()
-                if humanoidRootPart.Position.Y < -50 then
+                if hrp.Position.Y < -50 then
                     if isHiding then
                         if currentTime - lastSwitch >= voidHideTime then
                             isHiding = false
                             lastSwitch = currentTime
-                            humanoidRootPart.CFrame = CFrame.new(voidSpamPosition)
+                            hrp.CFrame = CFrame.new(voidSpamPosition)
                         end
                     else
                         if currentTime - lastSwitch >= voidAttackTime then
                             isHiding = true
                             lastSwitch = currentTime
-                            humanoidRootPart.CFrame = CFrame.new(voidSpamPosition + Vector3.new(0, -100, 0))
+                            hrp.CFrame = CFrame.new(voidSpamPosition + Vector3.new(0, -100, 0))
                         end
                     end
                 end
@@ -263,9 +267,8 @@ PlayerLeftGroup:AddSlider("Walk Speed", {
     Rounding = 1,
     Callback = function(value)
         walkSpeedValue = value
-        local player = game.Players.LocalPlayer
-        if player and player.Character and player.Character:FindFirstChild("Humanoid") then
-            player.Character.Humanoid.WalkSpeed = value
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.WalkSpeed = value
         end
     end
 })
@@ -279,9 +282,8 @@ PlayerLeftGroup:AddSlider("Jump Power", {
     Rounding = 1,
     Callback = function(value)
         jumpPowerValue = value
-        local player = game.Players.LocalPlayer
-        if player and player.Character and player.Character:FindFirstChild("Humanoid") then
-            player.Character.Humanoid.JumpPower = value
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.JumpPower = value
         end
     end
 })
@@ -292,13 +294,13 @@ PlayerLeftGroup:AddToggle("Infinity Jump", {
     Default = false,
     Callback = function(state)
         infinityJumpEnabled = state
-        local player = game.Players.LocalPlayer
         if infinityJumpEnabled then
-            infinityJumpConnection = game:GetService("RunService").Heartbeat:Connect(function()
-                if not player or not player.Character or not player.Character:FindFirstChild("Humanoid") then return end
-                local humanoid = player.Character.Humanoid
-                humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
-                humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+            infinityJumpConnection = RunService.Heartbeat:Connect(function()
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                    local humanoid = LocalPlayer.Character.Humanoid
+                    humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+                    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+                end
             end)
         else
             if infinityJumpConnection then
