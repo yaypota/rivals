@@ -23,7 +23,20 @@ local UISettingsGroup = SettingsTab:AddRightGroupbox("UI Settings")
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
+
+local showNotifications = true
+
+local function Notify(title, text, duration)
+    if not showNotifications then return end
+    duration = duration or 2
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = title,
+        Text = text,
+        Duration = duration
+    })
+end
 
 local function GetPlayerList()
     local list = {}
@@ -46,12 +59,34 @@ local function SafeTeleport(CFrameValue)
     return true
 end
 
+local function ApplyMovementSettings()
+    if LocalPlayer.Character then
+        local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = walkSpeedValue
+            humanoid.JumpPower = jumpPowerValue
+        end
+    end
+end
+
 local teleportEnabled = false
 local teleportLoop = nil
 local selectedPlayer = "No Players"
 local teleportMode = "Behind"
+local playerDropdown = nil
 
-MainLeftGroup:AddDropdown("Target Player", {
+local function UpdatePlayerList()
+    if playerDropdown then
+        local newList = GetPlayerList()
+        playerDropdown:SetValues(newList)
+        if not table.find(newList, selectedPlayer) then
+            selectedPlayer = newList[1] or "No Players"
+            playerDropdown:SetValue(selectedPlayer)
+        end
+    end
+end
+
+playerDropdown = MainLeftGroup:AddDropdown("Target Player", {
     Text = "Target Player",
     Description = "Select player to teleport to",
     Values = GetPlayerList(),
@@ -78,6 +113,10 @@ MainLeftGroup:AddToggle("Player Teleport", {
     Callback = function(state)
         teleportEnabled = state
         if teleportEnabled then
+            if selectedPlayer == "No Players" then
+                Notify("Error", "No players available", 2)
+                return
+            end
             teleportLoop = RunService.Heartbeat:Connect(function()
                 if selectedPlayer == "No Players" then return end
                 local target = nil
@@ -87,7 +126,9 @@ MainLeftGroup:AddToggle("Player Teleport", {
                         break
                     end
                 end
-                if not target then return end
+                if not target then
+                    return
+                end
                 if not target.Character then return end
                 local targetHrp = target.Character:FindFirstChild("HumanoidRootPart")
                 if not targetHrp then return end
@@ -105,11 +146,13 @@ MainLeftGroup:AddToggle("Player Teleport", {
                 end
                 SafeTeleport(CFrame.new(teleportPos))
             end)
+            Notify("Player Teleport", "Enabled", 1)
         else
             if teleportLoop then
                 teleportLoop:Disconnect()
                 teleportLoop = nil
             end
+            Notify("Player Teleport", "Disabled", 1)
         end
     end
 })
@@ -118,7 +161,8 @@ MainLeftGroup:AddButton({
     Text = "Refresh Players",
     Description = "Updates player list",
     Func = function()
-        -- Will be handled by dropdown
+        UpdatePlayerList()
+        Notify("Players", "List updated", 1)
     end
 })
 
@@ -128,6 +172,16 @@ local voidZ = 0
 local voidPosition = nil
 local voidPositionConnection = nil
 local voidTeleportEnabled = false
+local voidSpamEnabled = false
+local voidSpamConnection = nil
+local voidHideTime = 0.1
+local voidAttackTime = 0.1
+local voidSpamPosition = nil
+local voidSpamAttackOffset = Vector3.new(0, -100, 0)
+local isHiding = true
+local lastSwitch = 0
+local voidTeleportActive = false
+local voidSpamActive = false
 
 MainRightGroup:AddSlider("Void X", {
     Text = "Void X",
@@ -170,6 +224,7 @@ MainRightGroup:AddButton({
     Description = "Sets void teleport position",
     Func = function()
         voidPosition = CFrame.new(voidX, voidY, voidZ)
+        Notify("Void Position", "Set to X:"..voidX.." Y:"..voidY.." Z:"..voidZ, 2)
     end
 })
 
@@ -178,12 +233,19 @@ MainRightGroup:AddToggle("Void Teleport", {
     Description = "Teleports to position when in void",
     Default = false,
     Callback = function(state)
+        if state and voidSpamActive then
+            Notify("Error", "Disable Void Spam first", 2)
+            return
+        end
         voidTeleportEnabled = state
+        voidTeleportActive = state
         if voidTeleportEnabled then
             if not voidPosition then
                 voidPosition = CFrame.new(voidX, voidY, voidZ)
+                Notify("Void Teleport", "Using default position", 2)
             end
             voidPositionConnection = RunService.Heartbeat:Connect(function()
+                if not voidTeleportActive then return end
                 if not LocalPlayer.Character then return end
                 local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if not hrp then return end
@@ -191,22 +253,17 @@ MainRightGroup:AddToggle("Void Teleport", {
                     SafeTeleport(voidPosition)
                 end
             end)
+            Notify("Void Teleport", "Enabled", 1)
         else
+            voidTeleportActive = false
             if voidPositionConnection then
                 voidPositionConnection:Disconnect()
                 voidPositionConnection = nil
             end
+            Notify("Void Teleport", "Disabled", 1)
         end
     end
 })
-
-local voidSpamEnabled = false
-local voidSpamConnection = nil
-local voidHideTime = 0.1
-local voidAttackTime = 0.1
-local voidSpamPosition = nil
-local isHiding = true
-local lastSwitch = 0
 
 MainRightGroup:AddSlider("Void Hide Time", {
     Text = "Void Hide Time",
@@ -232,6 +289,42 @@ MainRightGroup:AddSlider("Void Attack Time", {
     end
 })
 
+MainRightGroup:AddSlider("Void Attack X", {
+    Text = "Void Attack X",
+    Description = "Attack position X offset",
+    Default = 0,
+    Min = -500,
+    Max = 500,
+    Rounding = 1,
+    Callback = function(value)
+        voidSpamAttackOffset = Vector3.new(value, voidSpamAttackOffset.Y, voidSpamAttackOffset.Z)
+    end
+})
+
+MainRightGroup:AddSlider("Void Attack Y", {
+    Text = "Void Attack Y",
+    Description = "Attack position Y offset",
+    Default = -100,
+    Min = -500,
+    Max = 500,
+    Rounding = 1,
+    Callback = function(value)
+        voidSpamAttackOffset = Vector3.new(voidSpamAttackOffset.X, value, voidSpamAttackOffset.Z)
+    end
+})
+
+MainRightGroup:AddSlider("Void Attack Z", {
+    Text = "Void Attack Z",
+    Description = "Attack position Z offset",
+    Default = 0,
+    Min = -500,
+    Max = 500,
+    Rounding = 1,
+    Callback = function(value)
+        voidSpamAttackOffset = Vector3.new(voidSpamAttackOffset.X, voidSpamAttackOffset.Y, value)
+    end
+})
+
 MainRightGroup:AddButton({
     Text = "Set Void Spam Position",
     Description = "Sets position for void spam",
@@ -240,6 +333,7 @@ MainRightGroup:AddButton({
             local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if hrp then
                 voidSpamPosition = hrp.Position
+                Notify("Void Spam", "Position set", 1)
             end
         end
     end
@@ -250,14 +344,21 @@ MainRightGroup:AddToggle("Void Spam", {
     Description = "Spams between void and position",
     Default = false,
     Callback = function(state)
+        if state and voidTeleportActive then
+            Notify("Error", "Disable Void Teleport first", 2)
+            return
+        end
         voidSpamEnabled = state
+        voidSpamActive = state
         if voidSpamEnabled then
             if not voidSpamPosition then
+                Notify("Error", "Set position first", 2)
                 return
             end
             isHiding = true
             lastSwitch = tick()
             voidSpamConnection = RunService.Heartbeat:Connect(function()
+                if not voidSpamActive then return end
                 if not LocalPlayer.Character then return end
                 local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if not hrp then return end
@@ -273,16 +374,20 @@ MainRightGroup:AddToggle("Void Spam", {
                         if currentTime - lastSwitch >= voidAttackTime then
                             isHiding = true
                             lastSwitch = currentTime
-                            SafeTeleport(CFrame.new(voidSpamPosition + Vector3.new(0, -100, 0)))
+                            local attackPos = voidSpamPosition + voidSpamAttackOffset
+                            SafeTeleport(CFrame.new(attackPos))
                         end
                     end
                 end
             end)
+            Notify("Void Spam", "Enabled", 1)
         else
+            voidSpamActive = false
             if voidSpamConnection then
                 voidSpamConnection:Disconnect()
                 voidSpamConnection = nil
             end
+            Notify("Void Spam", "Disabled", 1)
         end
     end
 })
@@ -291,6 +396,42 @@ local walkSpeedValue = 16
 local jumpPowerValue = 50
 local infinityJumpEnabled = false
 local infinityJumpConnection = nil
+local jumpKeyDown = false
+
+local function onCharacterAdded()
+    task.wait(0.1)
+    ApplyMovementSettings()
+    if infinityJumpEnabled then
+        if LocalPlayer.Character then
+            local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
+            if humanoid then
+                humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+                humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+            end
+        end
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.Space and infinityJumpEnabled then
+        jumpKeyDown = true
+        if LocalPlayer.Character then
+            local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
+            if humanoid and humanoid:GetState() ~= Enum.HumanoidStateType.Jumping then
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if input.KeyCode == Enum.KeyCode.Space then
+        jumpKeyDown = false
+    end
+end)
 
 PlayerLeftGroup:AddSlider("Walk Speed", {
     Text = "Walk Speed",
@@ -301,12 +442,7 @@ PlayerLeftGroup:AddSlider("Walk Speed", {
     Rounding = 1,
     Callback = function(value)
         walkSpeedValue = value
-        if LocalPlayer.Character then
-            local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
-            if humanoid then
-                humanoid.WalkSpeed = value
-            end
-        end
+        ApplyMovementSettings()
     end
 })
 
@@ -319,36 +455,27 @@ PlayerLeftGroup:AddSlider("Jump Power", {
     Rounding = 1,
     Callback = function(value)
         jumpPowerValue = value
-        if LocalPlayer.Character then
-            local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
-            if humanoid then
-                humanoid.JumpPower = value
-            end
-        end
+        ApplyMovementSettings()
     end
 })
 
 PlayerLeftGroup:AddToggle("Infinity Jump", {
     Text = "Infinity Jump",
-    Description = "Allows unlimited jumps",
+    Description = "Allows unlimited jumps (hold space)",
     Default = false,
     Callback = function(state)
         infinityJumpEnabled = state
         if infinityJumpEnabled then
-            infinityJumpConnection = RunService.Heartbeat:Connect(function()
-                if LocalPlayer.Character then
-                    local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
-                    if humanoid then
-                        humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
-                        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-                    end
+            if LocalPlayer.Character then
+                local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
+                if humanoid then
+                    humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+                    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
                 end
-            end)
-        else
-            if infinityJumpConnection then
-                infinityJumpConnection:Disconnect()
-                infinityJumpConnection = nil
             end
+            Notify("Infinity Jump", "Hold Space to jump", 2)
+        else
+            Notify("Infinity Jump", "Disabled", 1)
         end
     end
 })
@@ -357,12 +484,9 @@ PlayerRightGroup:AddButton({
     Text = "Reset Walk Speed",
     Description = "Resets to default walk speed",
     Func = function()
-        if LocalPlayer.Character then
-            local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
-            if humanoid then
-                humanoid.WalkSpeed = 16
-            end
-        end
+        walkSpeedValue = 16
+        ApplyMovementSettings()
+        Notify("Walk Speed", "Reset to 16", 1)
     end
 })
 
@@ -370,18 +494,45 @@ PlayerRightGroup:AddButton({
     Text = "Reset Jump Power",
     Description = "Resets to default jump power",
     Func = function()
-        if LocalPlayer.Character then
-            local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
-            if humanoid then
-                humanoid.JumpPower = 50
-            end
+        jumpPowerValue = 50
+        ApplyMovementSettings()
+        Notify("Jump Power", "Reset to 50", 1)
+    end
+})
+
+PlayerRightGroup:AddToggle("Disable Notifications", {
+    Text = "Disable Notifications",
+    Description = "Turns off all notification popups",
+    Default = false,
+    Callback = function(state)
+        showNotifications = not state
+        if state then
+            Notify("Notifications", "Disabled", 1)
         end
     end
 })
 
 local selectedConfig = "No Configs"
+local configDropdown = nil
 
-SettingsGroup:AddDropdown("Select Config", {
+local function UpdateConfigList()
+    if configDropdown then
+        local configList = {}
+        for _, v in ipairs(SaveManager:GetConfigList()) do
+            table.insert(configList, v)
+        end
+        if #configList == 0 then
+            table.insert(configList, "No Configs")
+        end
+        configDropdown:SetValues(configList)
+        if not table.find(configList, selectedConfig) then
+            selectedConfig = configList[1] or "No Configs"
+            configDropdown:SetValue(selectedConfig)
+        end
+    end
+end
+
+configDropdown = SettingsGroup:AddDropdown("Select Config", {
     Text = "Select Config",
     Description = "Choose a config",
     Values = function()
@@ -405,9 +556,19 @@ SettingsGroup:AddButton({
     Description = "Loads selected config",
     Func = function()
         if selectedConfig and selectedConfig ~= "No Configs" then
-            pcall(function()
+            local success, err = pcall(function()
                 SaveManager:LoadConfig(selectedConfig)
             end)
+            if success then
+                UpdateConfigList()
+                UpdatePlayerList()
+                ApplyMovementSettings()
+                Notify("Config", "Loaded: "..selectedConfig, 2)
+            else
+                Notify("Error", "Failed to load config", 2)
+            end
+        else
+            Notify("Error", "No config selected", 2)
         end
     end
 })
@@ -416,9 +577,15 @@ SettingsGroup:AddButton({
     Text = "Save Config",
     Description = "Saves current settings",
     Func = function()
-        pcall(function()
+        local success, err = pcall(function()
             SaveManager:Save()
         end)
+        if success then
+            UpdateConfigList()
+            Notify("Config", "Saved successfully", 2)
+        else
+            Notify("Error", "Failed to save config", 2)
+        end
     end
 })
 
@@ -427,9 +594,17 @@ SettingsGroup:AddButton({
     Description = "Deletes selected config",
     Func = function()
         if selectedConfig and selectedConfig ~= "No Configs" then
-            pcall(function()
+            local success, err = pcall(function()
                 SaveManager:DeleteConfig(selectedConfig)
             end)
+            if success then
+                UpdateConfigList()
+                Notify("Config", "Deleted: "..selectedConfig, 2)
+            else
+                Notify("Error", "Failed to delete config", 2)
+            end
+        else
+            Notify("Error", "No config selected", 2)
         end
     end
 })
@@ -438,9 +613,15 @@ SettingsGroup:AddButton({
     Text = "Reset All Settings",
     Description = "Resets all settings",
     Func = function()
-        pcall(function()
+        local success, err = pcall(function()
             SaveManager:Reset()
         end)
+        if success then
+            UpdateConfigList()
+            Notify("Settings", "Reset to default", 2)
+        else
+            Notify("Error", "Failed to reset settings", 2)
+        end
     end
 })
 
@@ -450,9 +631,14 @@ UISettingsGroup:AddDropdown("UI Theme", {
     Values = {"Dark", "Light", "Blue", "Red", "Purple", "Green", "Orange", "Pink"},
     Default = "Dark",
     Callback = function(value)
-        pcall(function()
+        local success, err = pcall(function()
             ThemeManager:SetTheme(value)
         end)
+        if success then
+            Notify("Theme", "Changed to: "..value, 1)
+        else
+            Notify("Error", "Theme change failed", 1)
+        end
     end
 })
 
@@ -481,13 +667,13 @@ UISettingsGroup:AddSlider("Watermark Opacity", {
     end
 })
 
-UISettingsGroup:AddButton({
-    Text = "Refresh Players",
-    Description = "Updates player list",
-    Func = function()
-        -- handled by dropdown values
-    end
-})
+Players.PlayerAdded:Connect(function()
+    UpdatePlayerList()
+end)
+
+Players.PlayerRemoving:Connect(function()
+    UpdatePlayerList()
+end)
 
 pcall(function()
     Library:SetWatermarkVisibility(true)
@@ -502,4 +688,9 @@ pcall(function()
     ThemeManager:SetFolder("RivalsUtility")
     SaveManager:SetFolder("RivalsUtility")
     SaveManager:Load()
+    task.wait(0.1)
+    UpdateConfigList()
+    UpdatePlayerList()
 end)
+
+Notify("Rivals Utility", "Loaded successfully!", 2)
