@@ -1129,4 +1129,131 @@ local PlayerLeftGroup = PlayerTab:AddLeftGroupbox("Player Stats")
 local PlayerRightGroup = PlayerTab:AddRightGroupbox("Player Options")
 
 PlayerLeftGroup:AddLabel("Username"):SetText("Username: " .. LocalPlayer.Name)
-PlayerLeftGroup:
+PlayerLeftGroup:AddLabel("Health"):SetText("Health: " .. (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") and math.floor(LocalPlayer.Character.Humanoid.Health) or "N/A"))
+PlayerLeftGroup:AddLabel("MaxHealth"):SetText("Max Health: " .. (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") and math.floor(LocalPlayer.Character.Humanoid.MaxHealth) or "N/A"))
+PlayerLeftGroup:AddLabel("Position"):SetText("Position: " .. (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and tostring(LocalPlayer.Character.HumanoidRootPart.Position) or "N/A"))
+
+PlayerRightGroup:AddToggle("Fly", {
+    Text = "Fly Mode",
+    Default = false
+})
+
+PlayerRightGroup:AddSlider("FlySpeed", {
+    Text = "Fly Speed",
+    Default = 50,
+    Min = 10,
+    Max = 200,
+    Rounding = 0,
+    Compact = false
+})
+
+PlayerRightGroup:AddToggle("Noclip", {
+    Text = "Noclip",
+    Default = false
+})
+
+PlayerRightGroup:AddToggle("SpeedBoost", {
+    Text = "Speed Boost",
+    Default = false
+})
+
+PlayerRightGroup:AddSlider("WalkSpeed", {
+    Text = "Walk Speed",
+    Default = 16,
+    Min = 16,
+    Max = 100,
+    Rounding = 0,
+    Compact = false
+})
+
+PlayerRightGroup:AddToggle("InfiniteJump", {
+    Text = "Infinite Jump",
+    Default = false
+})
+
+PlayerRightGroup:AddSlider("JumpPower", {
+    Text = "Jump Power",
+    Default = 50,
+    Min = 50,
+    Max = 200,
+    Rounding = 0,
+    Compact = false
+})
+
+local SettingsGroup = SettingsTab:AddLeftGroupbox("Configuration")
+local SettingsRightGroup = SettingsTab:AddRightGroupbox("Theme")
+
+SettingsGroup:AddToggle("SaveOnExit", {
+    Text = "Save Settings on Exit",
+    Default = true
+})
+
+SettingsGroup:AddButton("SaveConfig", {
+    Text = "Save Config",
+    Func = function()
+        SaveManager:Save()
+    end
+})
+
+SettingsGroup:AddButton("LoadConfig", {
+    Text = "Load Config",
+    Func = function()
+        SaveManager:Load()
+    end
+})
+
+SettingsRightGroup:AddDropdown("ThemeDropdown", {
+    Text = "UI Theme",
+    Default = 1,
+    Options = {"Default", "Dark", "Light", "Neon", "Pastel", "Cyberpunk"},
+    Callback = function(value)
+        ThemeManager:SetTheme(value)
+    end
+})
+
+SettingsRightGroup:AddButton("ResetTheme", {
+    Text = "Reset Theme",
+    Func = function()
+        ThemeManager:SetTheme("Default")
+    end
+})
+
+RunService.RenderStepped:Connect(function()
+    if ragebotEnabled then
+        Ragebot()
+    end
+    
+    if dodgeEnabled then
+        Dodger()
+    end
+    
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChild("Humanoid")
+        if humanoid then
+            PlayerLeftGroup:GetLabel("Health"):SetText("Health: " .. math.floor(humanoid.Health))
+            PlayerLeftGroup:GetLabel("MaxHealth"):SetText("Max Health: " .. math.floor(humanoid.MaxHealth))
+        end
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local pos = hrp.Position
+            PlayerLeftGroup:GetLabel("Position"):SetText("Position: " .. string.format("%.1f, %.1f, %.1f", pos.X, pos.Y, pos.Z))
+        end
+    end
+end)
+
+SaveManager:SetLibrary(Library)
+ThemeManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+ThemeManager:SetFolder("CanvasLeft")
+SaveManager:SetFolder("CanvasLeft/saves")
+
+Library:OnUnload(function()
+    voidSpamEnabled = false
+    ragebotEnabled = false
+    dodgeEnabled = false
+end)
+
+SaveManager:Load()
+ThemeManager:Load()
