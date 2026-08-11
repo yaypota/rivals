@@ -90,12 +90,64 @@ local walkSpeed = 16
 local infiniteJumpEnabled = false
 local jumpPower = 50
 
+local voidSpamConnection = nil
+local currentDodgeTween = nil
+local fovCircle = nil
+local lastUpdate = 0
+local projectileCache = {}
+local targetTable = {}
+local isCharacterValid = false
+
+local function GetCharacter()
+    local char = LocalPlayer.Character
+    if not char then return nil, nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil, nil end
+    local humanoid = char:FindFirstChild("Humanoid")
+    if not humanoid then return nil, nil end
+    return char, hrp, humanoid
+end
+
+local function UpdateProjectileCache()
+    projectileCache = {}
+    local char, hrp = GetCharacter()
+    if not char or not hrp then return end
+    local playerPos = hrp.Position
+    
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Parent and not obj.Parent:IsA("Player") then
+            local isProjectile = false
+            local name = obj.Name:lower()
+            
+            if name:find("projectile") or name:find("bullet") or name:find("missile") or 
+               name:find("rocket") or name:find("ball") or name:find("orb") or
+               name:find("shot") or name:find("beam") or name:find("laser") or name:find("void") then
+                isProjectile = true
+            end
+            
+            if not isProjectile and obj.Velocity.Magnitude > 10 then
+                isProjectile = true
+            end
+            
+            if isProjectile then
+                local distance = (playerPos - obj.Position).Magnitude
+                if distance < dodgeRadius then
+                    table.insert(projectileCache, {
+                        object = obj,
+                        position = obj.Position,
+                        velocity = obj.Velocity,
+                        distance = distance
+                    })
+                end
+            end
+        end
+    end
+end
+
 local function GetRageTargets()
-    local targets = {}
-    local character = LocalPlayer.Character
-    if not character then return targets end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return targets end
+    table.clear(targetTable)
+    local char, hrp = GetCharacter()
+    if not char or not hrp then return targetTable end
     
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
@@ -117,7 +169,7 @@ local function GetRageTargets()
                 end
             end
             
-            table.insert(targets, {
+            table.insert(targetTable, {
                 player = player,
                 hrp = targetHrp,
                 distance = distance,
@@ -126,27 +178,28 @@ local function GetRageTargets()
         end
     end
     
-    table.sort(targets, function(a, b)
+    table.sort(targetTable, function(a, b)
         return a.priority > b.priority
     end)
     
-    return targets
+    return targetTable
 end
 
 local function FireRageShot(targetPos)
-    local character = LocalPlayer.Character
-    if not character then return end
+    local char, hrp = GetCharacter()
+    if not char or not hrp then return end
     
-    local remote = ReplicatedStorage:FindFirstChild("ShootEvent") or ReplicatedStorage:FindFirstChild("Attack")
-    if not remote then return end
+    local remote = ReplicatedStorage:FindFirstChild("ShootEvent")
+    if not remote then
+        remote = ReplicatedStorage:FindFirstChild("Attack")
+        if not remote then
+            return
+        end
+    end
     
-    local success, err = pcall(function()
+    pcall(function()
         remote:FireServer(targetPos)
     end)
-    
-    if not success then
-        warn("FireRageShot failed: " .. tostring(err))
-    end
     
     if ragebotHumanization then
         local randomOffset = Vector3.new(
@@ -154,12 +207,16 @@ local function FireRageShot(targetPos)
             math.random(-5, 5) / 10,
             math.random(-5, 5) / 10
         )
-        remote:FireServer(targetPos + randomOffset)
+        pcall(function()
+            remote:FireServer(targetPos + randomOffset)
+        end)
     end
 end
 
 local function Ragebot()
     if not ragebotEnabled then return end
+    local char, hrp = GetCharacter()
+    if not char or not hrp then return end
     
     local targets = GetRageTargets()
     if #targets == 0 then return end
@@ -199,14 +256,11 @@ local function Ragebot()
         end
         
         if ragebotAutoShoot then
-            local character = LocalPlayer.Character
-            if character then
-                local tool = character:FindFirstChildOfClass("Tool")
-                if tool and bestTarget.distance < 100 then
-                    pcall(function()
-                        tool:Activate()
-                    end)
-                end
+            local tool = char:FindFirstChildOfClass("Tool")
+            if tool and bestTarget.distance < 100 then
+                pcall(function()
+                    tool:Activate()
+                end)
             end
         end
         
@@ -215,7 +269,7 @@ local function Ragebot()
             if onScreen then
                 local distance = (Vector2.new(Mouse.X, Mouse.Y) - Vector2.new(screenPos.X, screenPos.Y)).Magnitude
                 if distance < 100 then
-                    wait(ragebotTriggerDelay)
+                    task.wait(ragebotTriggerDelay)
                     FireRageShot(bestTarget.hrp.Position)
                 end
             end
@@ -231,8 +285,6 @@ local function Ragebot()
         end
     end
 end
-
-local fovCircle = nil
 
 local function DrawFOVCircle()
     if not ragebotFOVCircle then
@@ -255,54 +307,10 @@ local function DrawFOVCircle()
     fovCircle.Position = Vector2.new(Mouse.X, Mouse.Y)
 end
 
-local function DetectProjectiles()
-    local projectiles = {}
-    local character = LocalPlayer.Character
-    if not character then return projectiles end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return projectiles end
-    
-    local playerPos = hrp.Position
-    
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Parent and not obj.Parent:IsA("Player") then
-            local isProjectile = false
-            local name = obj.Name:lower()
-            
-            if name:find("projectile") or name:find("bullet") or name:find("missile") or 
-               name:find("rocket") or name:find("ball") or name:find("orb") or
-               name:find("shot") or name:find("beam") or name:find("laser") or name:find("void") then
-                isProjectile = true
-            end
-            
-            if not isProjectile and obj.Velocity.Magnitude > 10 then
-                isProjectile = true
-            end
-            
-            if isProjectile then
-                local distance = (playerPos - obj.Position).Magnitude
-                if distance < dodgeRadius then
-                    table.insert(projectiles, {
-                        object = obj,
-                        position = obj.Position,
-                        velocity = obj.Velocity,
-                        distance = distance
-                    })
-                end
-            end
-        end
-    end
-    
-    return projectiles
-end
-
 local function PredictProjectile(projectile)
     if not projectile then return nil end
-    
-    local character = LocalPlayer.Character
-    if not character then return nil end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
+    local char, hrp = GetCharacter()
+    if not char or not hrp then return nil end
     
     local playerPos = hrp.Position
     local projPos = projectile.position
@@ -316,7 +324,7 @@ local function PredictProjectile(projectile)
     local projDir = projVel.Unit
     local angle = math.acos(math.clamp(dirToPlayer:Dot(projDir), -1, 1))
     local relativeVelocity = projVel - Vector3.new(0, 0, 0)
-    local timeToImpact = (playerPos - projPos).Magnitude / relativeVelocity.Magnitude
+    local timeToImpact = (playerPos - projPos).Magnitude / (relativeVelocity.Magnitude + 0.001)
     
     local isCritical = false
     if timeToImpact < 1 and angle < math.rad(45) then
@@ -332,10 +340,8 @@ local function PredictProjectile(projectile)
 end
 
 local function GetDodgeDirection(projectile)
-    local character = LocalPlayer.Character
-    if not character then return nil end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
+    local char, hrp = GetCharacter()
+    if not char or not hrp then return nil end
     
     local projVel = projectile.velocity
     local directions = {}
@@ -367,51 +373,53 @@ local function GetDodgeDirection(projectile)
 end
 
 local function PerformDodge(direction)
-    local character = LocalPlayer.Character
-    if not character then return end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
+    local char, hrp = GetCharacter()
+    if not char or not hrp then return end
+    
+    if currentDodgeTween then
+        currentDodgeTween:Cancel()
+        currentDodgeTween = nil
+    end
     
     local targetPos = hrp.Position + direction
-    
     local tweenInfo = TweenInfo.new(
         dodgeSmoothness,
         Enum.EasingStyle.Quad,
         Enum.EasingDirection.Out
     )
     
-    local success, err = pcall(function()
-        local tween = TweenService:Create(hrp, tweenInfo, {Position = targetPos})
-        tween:Play()
+    pcall(function()
+        currentDodgeTween = TweenService:Create(hrp, tweenInfo, {Position = targetPos})
+        currentDodgeTween:Play()
+        currentDodgeTween.Completed:Connect(function()
+            currentDodgeTween = nil
+        end)
     end)
-    
-    if not success then
-        warn("Dodge failed: " .. tostring(err))
-    end
     
     dodgeLastDodge = tick()
 end
 
 local function Dodger()
     if not dodgeEnabled then return end
-    
-    local character = LocalPlayer.Character
-    if not character then return end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
+    local char, hrp = GetCharacter()
+    if not char or not hrp then return end
     
     if tick() - dodgeLastDodge < dodgeCooldown then
         return
     end
     
-    local projectiles = DetectProjectiles()
-    if #projectiles == 0 then return end
+    if tick() - lastUpdate > 1 then
+        UpdateProjectileCache()
+        lastUpdate = tick()
+    end
+    
+    if #projectileCache == 0 then return end
     
     local shouldDodge = false
     local dodgeDir = nil
     local dangerLevel = 0
     
-    for _, proj in ipairs(projectiles) do
+    for _, proj in ipairs(projectileCache) do
         local prediction = PredictProjectile(proj)
         if prediction then
             if prediction.isCritical then
@@ -442,7 +450,7 @@ local function Dodger()
                         local targetPos = hrp.Position + dir
                         local score = 0
                         
-                        for _, otherProj in ipairs(projectiles) do
+                        for _, otherProj in ipairs(projectileCache) do
                             local distToOther = (targetPos - otherProj.position).Magnitude
                             if distToOther < 5 then
                                 score = score - 10
@@ -453,7 +461,8 @@ local function Dodger()
                         
                         local raycastParams = RaycastParams.new()
                         raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-                        raycastParams.FilterDescendantsInstances = {character}
+                        raycastParams.FilterDescendantsInstances = {char}
+                        raycastParams.IgnoreWater = true
                         
                         local ray = Ray.new(hrp.Position, dir * dodgeDistance)
                         local hit = workspace:Raycast(ray.Origin, ray.Direction, raycastParams)
@@ -490,12 +499,14 @@ end
 
 local function CastVoidSpell(target)
     if not target or not target.Character then return end
+    local char, hrp = GetCharacter()
+    if not char or not hrp then return end
     
-    local character = LocalPlayer.Character
-    if not character then return end
-    
-    local remote = ReplicatedStorage:FindFirstChild("VoidSpellEvent") or ReplicatedStorage:FindFirstChild("CastSpell")
-    if not remote then return end
+    local remote = ReplicatedStorage:FindFirstChild("VoidSpellEvent")
+    if not remote then
+        remote = ReplicatedStorage:FindFirstChild("CastSpell")
+        if not remote then return end
+    end
     
     local targetPos = target.Character.HumanoidRootPart.Position
     
@@ -524,11 +535,8 @@ end
 
 local function VoidSpam()
     if not voidSpamEnabled then return end
-    
-    local character = LocalPlayer.Character
-    if not character then return end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
+    local char, hrp = GetCharacter()
+    if not char or not hrp then return end
     
     local targets = {}
     if voidSpamAutoTarget or voidSpamTargetAll then
@@ -565,7 +573,7 @@ local function VoidSpam()
                 for _, target in ipairs(targets) do
                     CastVoidSpell(target)
                     if voidSpamRandomize then
-                        wait(math.random(1, 10) / 100)
+                        task.wait(math.random(1, 10) / 100)
                     end
                 end
             else
@@ -767,6 +775,9 @@ MainCenterGroup:AddToggle("DodgeToggle", {
     Default = false,
     Callback = function(v)
         dodgeEnabled = v
+        if v then
+            UpdateProjectileCache()
+        end
     end
 })
 
@@ -788,6 +799,7 @@ MainCenterGroup:AddSlider("DodgeRadius", {
     Compact = false,
     Callback = function(v)
         dodgeRadius = v
+        UpdateProjectileCache()
     end
 })
 
@@ -811,7 +823,7 @@ MainCenterGroup:AddSlider("PredictionTime", {
     Rounding = 1,
     Compact = false,
     Callback = function(v)
-        dodgePredictionTime = v
+        dodgePredictionTime = math.floor(v * 10) / 10
     end
 })
 
@@ -823,7 +835,7 @@ MainCenterGroup:AddSlider("ReactionTime", {
     Rounding = 2,
     Compact = false,
     Callback = function(v)
-        dodgeReactionTime = v
+        dodgeReactionTime = math.floor(v * 100) / 100
     end
 })
 
@@ -835,7 +847,7 @@ MainCenterGroup:AddSlider("DodgeSmoothness", {
     Rounding = 2,
     Compact = false,
     Callback = function(v)
-        dodgeSmoothness = v
+        dodgeSmoothness = math.floor(v * 100) / 100
     end
 })
 
@@ -847,7 +859,7 @@ MainCenterGroup:AddSlider("DodgeCooldown", {
     Rounding = 1,
     Compact = false,
     Callback = function(v)
-        dodgeCooldown = v
+        dodgeCooldown = math.floor(v * 10) / 10
     end
 })
 
@@ -882,12 +894,17 @@ MainRightGroup:AddToggle("VoidSpamToggle", {
     Callback = function(v)
         voidSpamEnabled = v
         if v then
-            spawn(function()
-                while voidSpamEnabled do
+            if voidSpamConnection then return end
+            voidSpamConnection = RunService.Heartbeat:Connect(function()
+                if voidSpamEnabled then
                     VoidSpam()
-                    wait(voidSpamDelay)
                 end
             end)
+        else
+            if voidSpamConnection then
+                voidSpamConnection:Disconnect()
+                voidSpamConnection = nil
+            end
         end
     end
 })
@@ -921,7 +938,18 @@ MainRightGroup:AddSlider("SpamDelay", {
     Rounding = 2,
     Compact = false,
     Callback = function(v)
-        voidSpamDelay = v
+        voidSpamDelay = math.floor(v * 100) / 100
+        if voidSpamConnection then
+            voidSpamConnection:Disconnect()
+            voidSpamConnection = nil
+            if voidSpamEnabled then
+                voidSpamConnection = RunService.Heartbeat:Connect(function()
+                    if voidSpamEnabled then
+                        VoidSpam()
+                    end
+                end)
+            end
+        end
     end
 })
 
@@ -998,6 +1026,9 @@ VisualLeftGroup:AddToggle("FOVCircleToggle", {
     Default = false,
     Callback = function(v)
         ragebotFOVCircle = v
+        if not v and fovCircle then
+            fovCircle.Visible = false
+        end
     end
 })
 
@@ -1053,26 +1084,21 @@ VisualRightGroup:AddToggle("NameTags", {
 local PlayerLeftGroup = PlayerTab:AddLeftGroupbox("Player Stats")
 local PlayerRightGroup = PlayerTab:AddRightGroupbox("Player Options")
 
-PlayerLeftGroup:AddLabel("Username"):SetText("Username: " .. LocalPlayer.Name)
-PlayerLeftGroup:AddLabel("Health"):SetText("Health: " .. (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") and math.floor(LocalPlayer.Character.Humanoid.Health) or "N/A"))
-PlayerLeftGroup:AddLabel("MaxHealth"):SetText("Max Health: " .. (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") and math.floor(LocalPlayer.Character.Humanoid.MaxHealth) or "N/A"))
-PlayerLeftGroup:AddLabel("Position"):SetText("Position: " .. (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and tostring(LocalPlayer.Character.HumanoidRootPart.Position) or "N/A"))
+local usernameLabel = PlayerLeftGroup:AddLabel("Username")
+local healthLabel = PlayerLeftGroup:AddLabel("Health")
+local maxHealthLabel = PlayerLeftGroup:AddLabel("MaxHealth")
+local positionLabel = PlayerLeftGroup:AddLabel("Position")
+
+usernameLabel:SetText("Username: " .. LocalPlayer.Name)
 
 PlayerRightGroup:AddToggle("Fly", {
     Text = "Fly Mode",
     Default = false,
     Callback = function(v)
         flyEnabled = v
-        if v then
-            local character = LocalPlayer.Character
-            if character and character:FindFirstChild("Humanoid") then
-                character.Humanoid.PlatformStand = true
-            end
-        else
-            local character = LocalPlayer.Character
-            if character and character:FindFirstChild("Humanoid") then
-                character.Humanoid.PlatformStand = false
-            end
+        local char, hrp, humanoid = GetCharacter()
+        if char and humanoid then
+            humanoid.PlatformStand = v
         end
     end
 })
@@ -1094,22 +1120,11 @@ PlayerRightGroup:AddToggle("Noclip", {
     Default = false,
     Callback = function(v)
         noclipEnabled = v
-        if v then
-            local character = LocalPlayer.Character
-            if character then
-                for _, part in ipairs(character:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = false
-                    end
-                end
-            end
-        else
-            local character = LocalPlayer.Character
-            if character then
-                for _, part in ipairs(character:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = true
-                    end
+        local char, hrp = GetCharacter()
+        if char then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = not v
                 end
             end
         end
@@ -1121,12 +1136,9 @@ PlayerRightGroup:AddToggle("SpeedBoost", {
     Default = false,
     Callback = function(v)
         speedEnabled = v
-        local character = LocalPlayer.Character
-        if character and character:FindFirstChild("Humanoid") then
-            if v then
-                character.Humanoid.WalkSpeed = walkSpeed            else
-                character.Humanoid.WalkSpeed = 16
-            end
+        local char, hrp, humanoid = GetCharacter()
+        if char and humanoid then
+            humanoid.WalkSpeed = v and walkSpeed or 16
         end
     end
 })
@@ -1141,9 +1153,9 @@ PlayerRightGroup:AddSlider("WalkSpeed", {
     Callback = function(v)
         walkSpeed = v
         if speedEnabled then
-            local character = LocalPlayer.Character
-            if character and character:FindFirstChild("Humanoid") then
-                character.Humanoid.WalkSpeed = v
+            local char, hrp, humanoid = GetCharacter()
+            if char and humanoid then
+                humanoid.WalkSpeed = v
             end
         end
     end
@@ -1154,13 +1166,9 @@ PlayerRightGroup:AddToggle("InfiniteJump", {
     Default = false,
     Callback = function(v)
         infiniteJumpEnabled = v
-        local character = LocalPlayer.Character
-        if character and character:FindFirstChild("Humanoid") then
-            if v then
-                character.Humanoid.JumpPower = jumpPower
-            else
-                character.Humanoid.JumpPower = 50
-            end
+        local char, hrp, humanoid = GetCharacter()
+        if char and humanoid then
+            humanoid.JumpPower = v and jumpPower or 50
         end
     end
 })
@@ -1175,9 +1183,9 @@ PlayerRightGroup:AddSlider("JumpPower", {
     Callback = function(v)
         jumpPower = v
         if infiniteJumpEnabled then
-            local character = LocalPlayer.Character
-            if character and character:FindFirstChild("Humanoid") then
-                character.Humanoid.JumpPower = v
+            local char, hrp, humanoid = GetCharacter()
+            if char and humanoid then
+                humanoid.JumpPower = v
             end
         end
     end
@@ -1194,31 +1202,27 @@ SettingsGroup:AddToggle("SaveOnExit", {
 SettingsGroup:AddButton("SaveConfig", {
     Text = "Save Config",
     Func = function()
-        local success, err = pcall(function()
+        pcall(function()
             SaveManager:Save()
         end)
-        if not success then
-            warn("Save failed: " .. tostring(err))
-        end
     end
 })
 
 SettingsGroup:AddButton("LoadConfig", {
     Text = "Load Config",
     Func = function()
-        local success, err = pcall(function()
+        pcall(function()
             SaveManager:Load()
         end)
-        if not success then
-            warn("Load failed: " .. tostring(err))
-        end
     end
 })
 
 SettingsGroup:AddButton("ResetConfig", {
     Text = "Reset Config",
     Func = function()
-        SaveManager:Reset()
+        pcall(function()
+            SaveManager:Reset()
+        end)
     end
 })
 
@@ -1227,19 +1231,18 @@ SettingsRightGroup:AddDropdown("ThemeDropdown", {
     Default = 1,
     Options = {"Default", "Dark", "Light", "Neon", "Pastel", "Cyberpunk"},
     Callback = function(value)
-        local success, err = pcall(function()
+        pcall(function()
             ThemeManager:SetTheme(value)
         end)
-        if not success then
-            warn("Theme change failed: " .. tostring(err))
-        end
     end
 })
 
 SettingsRightGroup:AddButton("ResetTheme", {
     Text = "Reset Theme",
     Func = function()
-        ThemeManager:SetTheme("Default")
+        pcall(function()
+            ThemeManager:SetTheme("Default")
+        end)
     end
 })
 
@@ -1252,6 +1255,10 @@ SaveManager:SetFolder("CanvasLeft/saves")
 
 Library:OnUnload(function()
     voidSpamEnabled = false
+    if voidSpamConnection then
+        voidSpamConnection:Disconnect()
+        voidSpamConnection = nil
+    end
     ragebotEnabled = false
     dodgeEnabled = false
     flyEnabled = false
@@ -1259,44 +1266,93 @@ Library:OnUnload(function()
     speedEnabled = false
     infiniteJumpEnabled = false
     
+    if currentDodgeTween then
+        currentDodgeTween:Cancel()
+        currentDodgeTween = nil
+    end
+    
     if fovCircle then
-        fovCircle.Visible = false
+        fovCircle:Remove()
         fovCircle = nil
     end
+    
+    table.clear(targetTable)
+    projectileCache = {}
 end)
 
-SaveManager:Load()
-ThemeManager:Load()
+pcall(function()
+    SaveManager:Load()
+    ThemeManager:Load()
+end)
 
 Library:SetWatermarkVisibility(true)
 Library:SetWatermark("Canvas - Left | Ready")
 
-RunService.RenderStepped:Connect(function()
-    if ragebotEnabled then
-        pcall(Ragebot)
-    end
-    
-    if dodgeEnabled then
-        pcall(Dodger)
-    end
-    
-    if ragebotFOVCircle then
-        pcall(DrawFOVCircle)
-    elseif fovCircle then
-        fovCircle.Visible = false
-    end
-    
-    local character = LocalPlayer.Character
-    if character then
-        local humanoid = character:FindFirstChild("Humanoid")
-        if humanoid then
-            PlayerLeftGroup:GetLabel("Health"):SetText("Health: " .. math.floor(humanoid.Health))
-            PlayerLeftGroup:GetLabel("MaxHealth"):SetText("Max Health: " .. math.floor(humanoid.MaxHealth))
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    local char, hrp, humanoid = GetCharacter()
+    if char and humanoid then
+        if flyEnabled then
+            humanoid.PlatformStand = true
         end
-        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if noclipEnabled then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+        if speedEnabled then
+            humanoid.WalkSpeed = walkSpeed
+        end
+        if infiniteJumpEnabled then
+            humanoid.JumpPower = jumpPower
+        end
+    end
+    UpdateProjectileCache()
+end)
+
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        if ragebotEnabled then
+            Ragebot()
+        end
+        
+        if dodgeEnabled then
+            Dodger()
+        end
+        
+        if ragebotFOVCircle then
+            DrawFOVCircle()
+        elseif fovCircle then
+            fovCircle.Visible = false
+        end
+        
+        local char, hrp, humanoid = GetCharacter()
+        if char and humanoid then
+            healthLabel:SetText("Health: " .. math.floor(humanoid.Health))
+            maxHealthLabel:SetText("Max Health: " .. math.floor(humanoid.MaxHealth))
+        end
         if hrp then
             local pos = hrp.Position
-            PlayerLeftGroup:GetLabel("Position"):SetText("Position: " .. string.format("%.1f, %.1f, %.1f", pos.X, pos.Y, pos.Z))
+            positionLabel:SetText("Position: " .. string.format("%.1f, %.1f, %.1f", pos.X, pos.Y, pos.Z))
         end
-    end
+        
+        if flyEnabled and hrp then
+            local moveDirection = Vector3.new()
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDirection = moveDirection + Camera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDirection = moveDirection - Camera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDirection = moveDirection - Camera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDirection = moveDirection + Camera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDirection = moveDirection + Vector3.new(0, 1, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDirection = moveDirection - Vector3.new(0, 1, 0) end
+            
+            if moveDirection.Magnitude > 0 then
+                moveDirection = moveDirection.Unit * flySpeed
+                hrp.Velocity = moveDirection
+            else
+                hrp.Velocity = Vector3.new(0, 0, 0)
+            end
+        end
+    end)
 end)
