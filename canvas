@@ -127,6 +127,39 @@ local function UpdateConfigList()
     end
 end
 
+local function ResetAllFeatures()
+    if teleportEnabled then
+        teleportEnabled = false
+        if teleportLoop then
+            teleportLoop:Disconnect()
+            teleportLoop = nil
+        end
+    end
+    if voidTeleportEnabled then
+        voidTeleportEnabled = false
+        voidTeleportActive = false
+        if voidPositionConnection then
+            voidPositionConnection:Disconnect()
+            voidPositionConnection = nil
+        end
+    end
+    if voidSpamEnabled then
+        voidSpamEnabled = false
+        voidSpamActive = false
+        if voidSpamConnection then
+            voidSpamConnection:Disconnect()
+            voidSpamConnection = nil
+        end
+    end
+    if infinityJumpEnabled then
+        infinityJumpEnabled = false
+    end
+    walkSpeedValue = 16
+    jumpPowerValue = 50
+    ApplyMovementSettings()
+    Notify("Reset", "All features disabled", 2)
+end
+
 local function SetupMainTab()
     playerDropdown = MainLeftGroup:AddDropdown("Target Player", {
         Text = "Target Player",
@@ -579,6 +612,46 @@ local function SetupPlayerTab()
         end
     })
 
+    PlayerLeftGroup:AddToggle("Walk Speed Boost", {
+        Text = "Walk Speed Boost (Hold Shift)",
+        Description = "Hold Shift for faster speed",
+        Default = false,
+        Keybind = {
+            Mode = "Hold",
+            Key = Enum.KeyCode.LeftShift,
+            Callback = function(state)
+                if state then
+                    walkSpeedValue = 50
+                else
+                    walkSpeedValue = 16
+                end
+                ApplyMovementSettings()
+            end
+        },
+        Callback = function(state)
+        end
+    })
+
+    PlayerLeftGroup:AddToggle("Jump Power Boost", {
+        Text = "Jump Power Boost (Hold J)",
+        Description = "Hold J for higher jumps",
+        Default = false,
+        Keybind = {
+            Mode = "Hold",
+            Key = Enum.KeyCode.J,
+            Callback = function(state)
+                if state then
+                    jumpPowerValue = 200
+                else
+                    jumpPowerValue = 50
+                end
+                ApplyMovementSettings()
+            end
+        },
+        Callback = function(state)
+        end
+    })
+
     PlayerLeftGroup:AddToggle("Infinity Jump", {
         Text = "Infinity Jump",
         Description = "Allows unlimited jumps (hold space)",
@@ -641,6 +714,8 @@ local function SetupPlayerTab()
 end
 
 local function SetupSettingsTab()
+    SettingsGroup:AddLabel("Settings Panel")
+
     SettingsGroup:AddToggle("Show Notifications", {
         Text = "Show Notifications",
         Description = "Toggle notifications on/off",
@@ -656,6 +731,18 @@ local function SetupSettingsTab()
             showNotifications = state
         end
     })
+
+    SettingsGroup:AddDivider()
+
+    SettingsGroup:AddButton({
+        Text = "Reset All Features",
+        Description = "Disable all active features",
+        Func = function()
+            ResetAllFeatures()
+        end
+    })
+
+    SettingsGroup:AddDivider()
 
     configDropdown = SettingsGroup:AddDropdown("Select Config", {
         Text = "Select Config",
@@ -734,6 +821,28 @@ local function SetupSettingsTab()
             end
         end
     })
+
+    SettingsGroup:AddButton({
+        Text = "Overwrite Config",
+        Description = "Save over existing config",
+        Func = function()
+            if selectedConfig and selectedConfig ~= "No Configs" then
+                local success, err = pcall(function()
+                    SaveManager:Save(selectedConfig)
+                end)
+                if success then
+                    UpdateConfigList()
+                    Notify("Config", "Overwritten: "..selectedConfig, 2)
+                else
+                    Notify("Error", "Failed to overwrite config", 2)
+                end
+            else
+                Notify("Error", "No config selected", 2)
+            end
+        end
+    })
+
+    SettingsGroup:AddDivider()
 
     SettingsGroup:AddButton({
         Text = "Reset All Settings",
