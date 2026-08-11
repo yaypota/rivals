@@ -17,8 +17,6 @@ local Mouse = LocalPlayer:GetMouse()
 local Camera = workspace.CurrentCamera
 
 local ragebotEnabled = false
-local ragebotMode = "Auto"
-local ragebotPriority = "Distance"
 local ragebotFOV = 180
 local ragebotHitChance = 90
 local ragebotPrediction = true
@@ -28,7 +26,6 @@ local ragebotAutoShoot = false
 local ragebotTriggerbot = false
 local ragebotTriggerDelay = 0.1
 local ragebotMultiTarget = false
-local ragebotSmoothness = 0.5
 local ragebotHumanization = false
 local ragebotFOVCircle = false
 local ragebotFOVColor = Color3.fromRGB(255, 0, 0)
@@ -139,32 +136,16 @@ local function GetRageTargets()
             local targetHrp = player.Character.HumanoidRootPart
             local distance = (hrp.Position - targetHrp.Position).Magnitude
             
-            local priorityScore = 0
-            if ragebotPriority == "Distance" then
-                priorityScore = 1000 - distance
-            elseif ragebotPriority == "Health" then
-                local humanoid = player.Character:FindFirstChild("Humanoid")
-                if humanoid then
-                    priorityScore = humanoid.Health / humanoid.MaxHealth * 100
-                end
-            elseif ragebotPriority == "Visibility" then
-                local screenPos, onScreen = Camera:WorldToScreenPoint(targetHrp.Position)
-                if onScreen then
-                    priorityScore = 100
-                end
-            end
-            
             table.insert(targetTable, {
                 player = player,
                 hrp = targetHrp,
-                distance = distance,
-                priority = priorityScore
+                distance = distance
             })
         end
     end
     
     table.sort(targetTable, function(a, b)
-        return a.priority > b.priority
+        return a.distance < b.distance
     end)
     
     return targetTable
@@ -206,7 +187,7 @@ local function Ragebot()
     
     for _, target in ipairs(targets) do
         if target.distance <= ragebotFOV then
-            local score = target.priority
+            local score = 1000 - target.distance
             if math.random(1, 100) <= ragebotHitChance then
                 score = score * 1.5
             end
@@ -300,7 +281,6 @@ local function PredictProjectile(projectile)
     
     if projVel.Magnitude < 1 then return nil end
     
-    local predTime = dodgePredictionTime
     local dirToPlayer = (playerPos - projPos).Unit
     local projDir = projVel.Unit
     local angle = math.acos(math.clamp(dirToPlayer:Dot(projDir), -1, 1))
@@ -587,24 +567,6 @@ MainLeftGroup:AddToggle({
     end
 })
 
-MainLeftGroup:AddDropdown({
-    Text = "Rage Mode",
-    Default = 1,
-    Options = {"Auto", "Manual", "Smart"},
-    Callback = function(value)
-        ragebotMode = value
-    end
-})
-
-MainLeftGroup:AddDropdown({
-    Text = "Target Priority",
-    Default = 1,
-    Options = {"Distance", "Health", "Visibility"},
-    Callback = function(value)
-        ragebotPriority = value
-    end
-})
-
 MainLeftGroup:AddSlider({
     Text = "Rage FOV",
     Default = 180,
@@ -625,17 +587,6 @@ MainLeftGroup:AddSlider({
     Rounding = 0,
     Callback = function(v)
         ragebotHitChance = v
-    end
-})
-
-MainLeftGroup:AddSlider({
-    Text = "Smoothness",
-    Default = 0.5,
-    Min = 0.1,
-    Max = 1,
-    Rounding = 1,
-    Callback = function(v)
-        ragebotSmoothness = v
     end
 })
 
@@ -732,7 +683,7 @@ MainCenterGroup:AddSlider({
 })
 
 MainCenterGroup:AddSlider({
-    Text = "Prediction Time (s)",
+    Text = "Prediction Time",
     Default = 0.5,
     Min = 0.1,
     Max = 2,
@@ -754,7 +705,7 @@ MainCenterGroup:AddSlider({
 })
 
 MainCenterGroup:AddSlider({
-    Text = "Dodge Cooldown (s)",
+    Text = "Dodge Cooldown",
     Default = 0.5,
     Min = 0.1,
     Max = 2,
@@ -831,7 +782,7 @@ MainRightGroup:AddSlider({
 })
 
 MainRightGroup:AddSlider({
-    Text = "Spam Delay (s)",
+    Text = "Spam Delay",
     Default = 0.5,
     Min = 0.01,
     Max = 2,
@@ -850,7 +801,7 @@ MainRightGroup:AddToggle({
 })
 
 MainRightGroup:AddToggle({
-    Text = "Target All Players",
+    Text = "Target All",
     Default = false,
     Callback = function(v)
         voidSpamTargetAll = v
@@ -874,7 +825,7 @@ MainRightGroup:AddToggle({
 })
 
 MainRightGroup:AddToggle({
-    Text = "Area of Effect",
+    Text = "AOE",
     Default = false,
     Callback = function(v)
         voidSpamAOE = v
@@ -882,7 +833,7 @@ MainRightGroup:AddToggle({
 })
 
 MainRightGroup:AddToggle({
-    Text = "Randomize Cast",
+    Text = "Randomize",
     Default = false,
     Callback = function(v)
         voidSpamRandomize = v
@@ -907,7 +858,6 @@ MainRightGroup:AddToggle({
 
 -- Visual Tab
 local VisualLeftGroup = VisualTab:AddLeftTabBox("FOV Circle")
-local VisualCenterGroup = VisualTab:AddLeftTabBox("Dodge Visuals")
 local VisualRightGroup = VisualTab:AddRightTabBox("Visual Options")
 
 VisualLeftGroup:AddToggle({
@@ -952,12 +902,12 @@ VisualRightGroup:AddColorPicker({
 })
 
 VisualRightGroup:AddToggle({
-    Text = "Enable Chams",
+    Text = "Chams",
     Default = false
 })
 
 VisualRightGroup:AddToggle({
-    Text = "Show Name Tags",
+    Text = "Name Tags",
     Default = true
 })
 
@@ -1083,7 +1033,7 @@ local SettingsGroup = SettingsTab:AddLeftTabBox("Configuration")
 local SettingsRightGroup = SettingsTab:AddRightTabBox("Theme")
 
 SettingsGroup:AddToggle({
-    Text = "Save Settings on Exit",
+    Text = "Save on Exit",
     Default = true
 })
 
@@ -1199,7 +1149,8 @@ characterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(char)
             end
         end
         if speedEnabled then
-            humanoid.WalkSpeed = walkSpeed        end
+            humanoid.WalkSpeed = walkSpeed
+        end
         if infiniteJumpEnabled then
             humanoid.JumpPower = jumpPower
         end
