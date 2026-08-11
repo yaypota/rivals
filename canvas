@@ -1,137 +1,340 @@
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
+local Library = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/Library.lua'))()
+local SaveManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/SaveManager.lua'))()
+local ThemeManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/ThemeManager.lua'))()
 
-local Window = Library.CreateLib("Rivals Utility", "DarkTheme")
-local MainTab = Window:NewTab("Main")
-local MainSection = MainTab:NewSection("Main Features")
-local PlayerTab = Window:NewTab("Player")
-local PlayerSection = PlayerTab:NewSection("Player Settings")
-local SettingTab = Window:NewTab("Settings")
-local SettingSection = SettingTab:NewSection("Configuration")
+local Window = Library:CreateWindow({
+    Title = "Rivals Utility",
+    Center = false,
+    AutoShow = true,
+    TabWidth = 160,
+    Position = UDim2.new(0, 0, 0, 0)
+})
+
+local MainTab = Window:AddTab("Main")
+local PlayerTab = Window:AddTab("Player")
+local SettingsTab = Window:AddTab("Settings")
+
+local MainLeftGroup = MainTab:AddLeftGroupbox("Main Features")
+local MainRightGroup = MainTab:AddRightGroupbox("Void Features")
+
+local PlayerLeftGroup = PlayerTab:AddLeftGroupbox("Player Stats")
+local PlayerRightGroup = PlayerTab:AddRightGroupbox("Combat Settings")
+
+local SettingsGroup = SettingsTab:AddLeftGroupbox("Configuration")
 
 local teleportEnabled = false
 local enemyTeleportLoop = nil
-local savedPosition = nil
-local antiVoidEnabled = false
-local antiVoidConnection = nil
 
-
-MainSection:NewToggle("Enemy Teleport", "Teleports to the nearest enemy continuously", function(state)
-    teleportEnabled = state
-    local player = game.Players.LocalPlayer
-    
-    if teleportEnabled then
-        enemyTeleportLoop = game:GetService("RunService").Heartbeat:Connect(function()
-            if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
-                return
-            end
-            
-            local closestEnemy = nil
-            local closestDistance = math.huge
-            local myPosition = player.Character.HumanoidRootPart.Position
-            
-            for _, otherPlayer in ipairs(game.Players:GetPlayers()) do
-                if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                    local enemyPosition = otherPlayer.Character.HumanoidRootPart.Position
-                    local distance = (myPosition - enemyPosition).Magnitude
-                    
-                    if distance < closestDistance and distance < 100 then
-                        closestEnemy = otherPlayer
-                        closestDistance = distance
+MainLeftGroup:AddToggle("PlayerTeleport", {
+    Text = "Player Teleport",
+    Description = "Teleports to the nearest enemy continuously",
+    Default = false,
+    Callback = function(state)
+        teleportEnabled = state
+        local player = game.Players.LocalPlayer
+        
+        if teleportEnabled then
+            enemyTeleportLoop = game:GetService("RunService").Heartbeat:Connect(function()
+                if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+                    return
+                end
+                
+                local closestEnemy = nil
+                local closestDistance = math.huge
+                local myPosition = player.Character.HumanoidRootPart.Position
+                
+                for _, otherPlayer in ipairs(game.Players:GetPlayers()) do
+                    if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                        local enemyPosition = otherPlayer.Character.HumanoidRootPart.Position
+                        local distance = (myPosition - enemyPosition).Magnitude
+                        
+                        if distance < closestDistance and distance < 100 then
+                            closestEnemy = otherPlayer
+                            closestDistance = distance
+                        end
                     end
                 end
+                
+                if closestEnemy then
+                    local targetPosition = closestEnemy.Character.HumanoidRootPart.Position
+                    local teleportCFrame = CFrame.new(targetPosition + Vector3.new(0, 2, 0))
+                    player.Character.HumanoidRootPart.CFrame = teleportCFrame
+                end
+            end)
+        else
+            if enemyTeleportLoop then
+                enemyTeleportLoop:Disconnect()
+                enemyTeleportLoop = nil
             end
-            
-            if closestEnemy then
-                local targetPosition = closestEnemy.Character.HumanoidRootPart.Position
-                local teleportCFrame = CFrame.new(targetPosition + Vector3.new(0, 2, 0))
-                player.Character.HumanoidRootPart.CFrame = teleportCFrame
-            end
-        end)
-    else
-        if enemyTeleportLoop then
-            enemyTeleportLoop:Disconnect()
-            enemyTeleportLoop = nil
         end
     end
-end)
+})
 
+local voidPosition = nil
+local voidPositionConnection = nil
 
-MainSection:NewButton("Save Position", "Saves current position for void teleport", function()
-    local player = game.Players.LocalPlayer
-    if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        savedPosition = player.Character.HumanoidRootPart.CFrame
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "Position Saved",
-            Text = "Return position saved successfully!",
-            Duration = 2
-        })
-    end
-end)
-
-
-MainSection:NewToggle("Anti-Void", "Teleports to saved position when falling into void", function(state)
-    antiVoidEnabled = state
-    local player = game.Players.LocalPlayer
-    
-    if antiVoidEnabled then
-        if not savedPosition then
-            game:GetService("StarterGui"):SetCore("SendNotification", {
-                Title = "Error",
-                Text = "Please save a position first",
-                Duration = 3
-            })
-            return
+MainRightGroup:AddButton({
+    Text = "Set Void Position",
+    Description = "Saves current position for void teleport",
+    Func = function()
+        local player = game.Players.LocalPlayer
+        if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            voidPosition = player.Character.HumanoidRootPart.CFrame
         end
+    end
+})
+
+MainRightGroup:AddToggle("Void Teleport", {
+    Text = "Void Teleport",
+    Description = "Teleports to saved position when falling into void",
+    Default = false,
+    Callback = function(state)
+        local player = game.Players.LocalPlayer
         
-        antiVoidConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+        if state then
+            if not voidPosition then
                 return
             end
             
-            local humanoidRootPart = player.Character.HumanoidRootPart
-            if humanoidRootPart.Position.Y < -50 then
-                humanoidRootPart.CFrame = savedPosition
-                game:GetService("StarterGui"):SetCore("SendNotification", {
-                    Title = "Void Detected",
-                    Text = "Teleported to saved position",
-                    Duration = 1
-                })
+            voidPositionConnection = game:GetService("RunService").Heartbeat:Connect(function()
+                if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+                    return
+                end
+                
+                local humanoidRootPart = player.Character.HumanoidRootPart
+                if humanoidRootPart.Position.Y < -50 then
+                    humanoidRootPart.CFrame = voidPosition
+                end
+            end)
+        else
+            if voidPositionConnection then
+                voidPositionConnection:Disconnect()
+                voidPositionConnection = nil
             end
-        end)
-    else
-        if antiVoidConnection then
-            antiVoidConnection:Disconnect()
-            antiVoidConnection = nil
         end
     end
-end)
+})
 
+local voidSpamEnabled = false
+local voidSpamConnection = nil
+local spamPosition = nil
 
-PlayerSection:NewSlider("Walk Speed", "Changes player's walk speed", 16, 100, 16, function(value)
-    local player = game.Players.LocalPlayer
-    if player and player.Character and player.Character:FindFirstChild("Humanoid") then
-        player.Character.Humanoid.WalkSpeed = value
+MainRightGroup:AddButton({
+    Text = "Set Spam Position",
+    Description = "Sets position for void spam teleport",
+    Func = function()
+        local player = game.Players.LocalPlayer
+        if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            spamPosition = player.Character.HumanoidRootPart.Position
+        end
     end
-end)
+})
 
-
-PlayerSection:NewSlider("Jump Power", "Changes player's jump power", 50, 150, 50, function(value)
-    local player = game.Players.LocalPlayer
-    if player and player.Character and player.Character:FindFirstChild("Humanoid") then
-        player.Character.Humanoid.JumpPower = value
+MainRightGroup:AddToggle("Void Spam", {
+    Text = "Void Spam",
+    Description = "Spams teleport to position when in void",
+    Default = false,
+    Callback = function(state)
+        voidSpamEnabled = state
+        local player = game.Players.LocalPlayer
+        
+        if voidSpamEnabled then
+            if not spamPosition then
+                return
+            end
+            
+            voidSpamConnection = game:GetService("RunService").Heartbeat:Connect(function()
+                if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+                    return
+                end
+                
+                local humanoidRootPart = player.Character.HumanoidRootPart
+                if humanoidRootPart.Position.Y < -50 then
+                    humanoidRootPart.CFrame = CFrame.new(spamPosition)
+                end
+            end)
+        else
+            if voidSpamConnection then
+                voidSpamConnection:Disconnect()
+                voidSpamConnection = nil
+            end
+        end
     end
-end)
+})
 
+local walkSpeedValue = 16
+local jumpPowerValue = 50
 
-PlayerSection:NewLabel("Current Speed: " .. tostring(game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("Humanoid") and game.Players.LocalPlayer.Character.Humanoid.WalkSpeed or "Unknown"))
-	
-SettingSection:NewDropdown("Theme Color", "Changes UI theme color", {"Dark", "Light", "Blue", "Red"}, "Dark", function(value)
-    print("Theme changed to: " .. value)
-end)
+PlayerLeftGroup:AddSlider("Walk Speed", {
+    Text = "Walk Speed",
+    Description = "Changes player's walk speed",
+    Default = 16,
+    Min = 16,
+    Max = 100,
+    Rounding = 1,
+    Callback = function(value)
+        walkSpeedValue = value
+        local player = game.Players.LocalPlayer
+        if player and player.Character and player.Character:FindFirstChild("Humanoid") then
+            player.Character.Humanoid.WalkSpeed = value
+        end
+    end
+})
 
+PlayerLeftGroup:AddSlider("Jump Power", {
+    Text = "Jump Power",
+    Description = "Changes player's jump power",
+    Default = 50,
+    Min = 50,
+    Max = 150,
+    Rounding = 1,
+    Callback = function(value)
+        jumpPowerValue = value
+        local player = game.Players.LocalPlayer
+        if player and player.Character and player.Character:FindFirstChild("Humanoid") then
+            player.Character.Humanoid.JumpPower = value
+        end
+    end
+})
 
-SettingSection:NewButton("Reset Settings", "Resets all settings to default", function()
-    print("Settings reset")
-end)
+PlayerLeftGroup:AddToggle("Auto Jump", {
+    Text = "Auto Jump",
+    Description = "Automatically jumps when possible",
+    Default = false,
+    Callback = function(state)
+        -- Auto jump logic here
+    end
+})
 
-Window.Show()
+local aimbotEnabled = false
+local aimbotConnection = nil
+
+PlayerRightGroup:AddToggle("Aimbot", {
+    Text = "Aimbot",
+    Description = "Automatically aims at nearest enemy",
+    Default = false,
+    Callback = function(state)
+        aimbotEnabled = state
+        local player = game.Players.LocalPlayer
+        
+        if aimbotEnabled then
+            aimbotConnection = game:GetService("RunService").Heartbeat:Connect(function()
+                if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+                    return
+                end
+                
+                local closestEnemy = nil
+                local closestDistance = math.huge
+                local myPosition = player.Character.HumanoidRootPart.Position
+                
+                for _, otherPlayer in ipairs(game.Players:GetPlayers()) do
+                    if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                        local enemyPosition = otherPlayer.Character.HumanoidRootPart.Position
+                        local distance = (myPosition - enemyPosition).Magnitude
+                        
+                        if distance < closestDistance and distance < 100 then
+                            closestEnemy = otherPlayer
+                            closestDistance = distance
+                        end
+                    end
+                end
+                
+                if closestEnemy then
+                    -- Aimbot logic here
+                end
+            end)
+        else
+            if aimbotConnection then
+                aimbotConnection:Disconnect()
+                aimbotConnection = nil
+            end
+        end
+    end
+})
+
+PlayerRightGroup:AddToggle("Instant Kill", {
+    Text = "Instant Kill",
+    Description = "Kills enemies instantly on hit",
+    Default = false,
+    Callback = function(state)
+        -- Instant kill logic here
+    end
+})
+
+PlayerRightGroup:AddToggle("No Recoil", {
+    Text = "No Recoil",
+    Description = "Removes weapon recoil",
+    Default = false,
+    Callback = function(state)
+        -- No recoil logic here
+    end
+})
+
+SettingsGroup:AddDropdown("Theme", {
+    Text = "Theme",
+    Description = "Changes UI theme color",
+    Values = {"Dark", "Light", "Blue", "Red", "Purple", "Green"},
+    Default = "Dark",
+    Callback = function(value)
+        ThemeManager:SetTheme(value)
+    end
+})
+
+SettingsGroup:AddToggle("Watermark", {
+    Text = "Show Watermark",
+    Description = "Shows watermark on screen",
+    Default = true,
+    Callback = function(state)
+        Library:SetWatermarkVisibility(state)
+    end
+})
+
+SettingsGroup:AddSlider("Watermark Opacity", {
+    Text = "Watermark Opacity",
+    Description = "Changes watermark transparency",
+    Default = 1,
+    Min = 0,
+    Max = 1,
+    Rounding = 2,
+    Callback = function(value)
+        -- Watermark opacity logic here
+    end
+})
+
+SettingsGroup:AddButton({
+    Text = "Reset All Settings",
+    Description = "Resets all settings to default",
+    Func = function()
+        SaveManager:Reset()
+    end
+})
+
+SettingsGroup:AddButton({
+    Text = "Save Settings",
+    Description = "Saves current settings",
+    Func = function()
+        SaveManager:Save()
+    end
+})
+
+SettingsGroup:AddButton({
+    Text = "Load Settings",
+    Description = "Loads saved settings",
+    Func = function()
+        SaveManager:Load()
+    end
+})
+
+Library:SetWatermarkVisibility(true)
+Library:SetWatermark("Rivals Utility | Loaded")
+
+SaveManager:SetLibrary(Library)
+ThemeManager:SetLibrary(Library)
+
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+
+ThemeManager:SetFolder("RivalsUtility")
+SaveManager:SetFolder("RivalsUtility")
+
+SaveManager:Load()
