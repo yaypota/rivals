@@ -1,29 +1,11 @@
-local success, Library = pcall(function()
-    return loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/Library.lua'))()
-end)
-
-if not success or not Library then
-    warn("Failed to load LinoriaLib")
+local Library = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/Library.lua'))()
+if not Library then
+    warn("Failed to load Library")
     return
 end
 
-local success2, SaveManager = pcall(function()
-    return loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/SaveManager.lua'))()
-end)
-
-if not success2 or not SaveManager then
-    warn("Failed to load SaveManager")
-    return
-end
-
-local success3, ThemeManager = pcall(function()
-    return loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/ThemeManager.lua'))()
-end)
-
-if not success3 or not ThemeManager then
-    warn("Failed to load ThemeManager")
-    return
-end
+local SaveManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/SaveManager.lua'))()
+local ThemeManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/refs/heads/main/addons/ThemeManager.lua'))()
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -45,7 +27,6 @@ local ragebotWallbang = false
 local ragebotAutoShoot = false
 local ragebotTriggerbot = false
 local ragebotTriggerDelay = 0.1
-local ragebotHeadshotOnly = false
 local ragebotMultiTarget = false
 local ragebotSmoothness = 0.5
 local ragebotHumanization = false
@@ -72,15 +53,12 @@ local dodgeEnabled = false
 local dodgeMode = "Auto"
 local dodgeRadius = 15
 local dodgePredictionTime = 0.5
-local dodgeReactionTime = 0.1
 local dodgeSmoothness = 0.3
-local dodgeVisualize = false
 local dodgeOnlyCritical = false
 local dodgeDistance = 10
 local dodgeDirection = "Random"
 local dodgeCooldown = 0.5
 local dodgeLastDodge = 0
-local dodgeDebug = false
 
 local flyEnabled = false
 local flySpeed = 50
@@ -92,16 +70,12 @@ local jumpPower = 50
 
 local voidSpamConnection = nil
 local characterAddedConnection = nil
-local descendantAddedConnection = nil
 local currentDodgeTween = nil
 local fovCircle = nil
 local lastUpdate = 0
 local projectileCache = {}
 local targetTable = {}
 local voidSpamTimer = 0
-local raycastParams = RaycastParams.new()
-raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-raycastParams.IgnoreWater = true
 
 local function GetCharacter()
     local char = LocalPlayer.Character
@@ -111,20 +85,6 @@ local function GetCharacter()
     local humanoid = char:FindFirstChild("Humanoid")
     if not humanoid then return nil, nil, nil end
     return char, hrp, humanoid
-end
-
-local function GetRaycastParams(character)
-    raycastParams.FilterDescendantsInstances = {character}
-    return raycastParams
-end
-
-local function ApplyNoclip(character)
-    if not noclipEnabled or not character then return end
-    for _, part in ipairs(character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = false
-        end
-    end
 end
 
 local function UpdateProjectileCache()
@@ -139,18 +99,12 @@ local function UpdateProjectileCache()
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Parent and not obj.Parent:IsA("Player") then
             local isProjectile = false
+            local name = obj.Name:lower()
             
-            if obj:IsA("Projectile") or obj:IsA("Bullet") then
+            if name:find("projectile") or name:find("bullet") or name:find("missile") or 
+               name:find("rocket") or name:find("ball") or name:find("orb") or
+               name:find("shot") or name:find("beam") or name:find("laser") or name:find("void") then
                 isProjectile = true
-            elseif obj:GetAttribute("IsProjectile") then
-                isProjectile = true
-            else
-                local name = obj.Name:lower()
-                if name:find("projectile") or name:find("bullet") or name:find("missile") or 
-                   name:find("rocket") or name:find("ball") or name:find("orb") or
-                   name:find("shot") or name:find("beam") or name:find("laser") or name:find("void") then
-                    isProjectile = true
-                end
             end
             
             if not isProjectile and obj.Velocity and obj.Velocity.Magnitude > 10 then
@@ -216,27 +170,16 @@ local function GetRageTargets()
     return targetTable
 end
 
-local function SmoothAim(currentPos, targetPos)
-    return currentPos + (targetPos - currentPos) * ragebotSmoothness
-end
-
 local function FireRageShot(targetPos)
     local char, hrp = GetCharacter()
     if not char or not hrp then return end
     
-    local remote = ReplicatedStorage:FindFirstChild("ShootEvent")
-    if not remote then
-        remote = ReplicatedStorage:FindFirstChild("Attack")
-        if not remote then return end
-    end
+    local remote = ReplicatedStorage:FindFirstChild("ShootEvent") or ReplicatedStorage:FindFirstChild("Attack")
+    if not remote then return end
     
-    local success, err = pcall(function()
+    pcall(function()
         remote:FireServer(targetPos)
     end)
-    if not success then
-        warn("FireRageShot failed: " .. tostring(err))
-        return
-    end
     
     if ragebotHumanization then
         local randomOffset = Vector3.new(
@@ -283,10 +226,7 @@ local function Ragebot()
             targetPos = bestTarget.hrp.Position
         end
         
-        -- スムーズネス適用
-        local currentPos = hrp.Position
-        local smoothPos = SmoothAim(currentPos, targetPos)
-        FireRageShot(smoothPos)
+        FireRageShot(targetPos)
         
         if ragebotWallbang then
             local remote = ReplicatedStorage:FindFirstChild("WallbangEvent")
@@ -361,7 +301,6 @@ local function PredictProjectile(projectile)
     if projVel.Magnitude < 1 then return nil end
     
     local predTime = dodgePredictionTime
-    local predictedPos = projPos + (projVel * predTime)
     local dirToPlayer = (playerPos - projPos).Unit
     local projDir = projVel.Unit
     local angle = math.acos(math.clamp(dirToPlayer:Dot(projDir), -1, 1))
@@ -374,48 +313,32 @@ local function PredictProjectile(projectile)
     end
     
     return {
-        predictedPos = predictedPos,
         timeToImpact = timeToImpact,
-        isCritical = isCritical,
-        impactPoint = playerPos + (projVel.Unit * (playerPos - projPos).Magnitude)
+        isCritical = isCritical
     }
 end
 
 local function GetDodgeDirection(projectile)
-    local char, hrp = GetCharacter()
-    if not char or not hrp then return nil end
-    
-    local projVel = projectile.velocity
-    local directions = {}
-    
     if dodgeDirection == "Random" then
         local angle = math.random(0, 360)
         local rad = math.rad(angle)
-        local dir = Vector3.new(math.cos(rad), 0, math.sin(rad))
-        table.insert(directions, dir * dodgeDistance)
+        return Vector3.new(math.cos(rad), 0, math.sin(rad)) * dodgeDistance
     elseif dodgeDirection == "Left" then
-        table.insert(directions, -Camera.CFrame.RightVector * dodgeDistance)
+        return -Camera.CFrame.RightVector * dodgeDistance
     elseif dodgeDirection == "Right" then
-        table.insert(directions, Camera.CFrame.RightVector * dodgeDistance)
+        return Camera.CFrame.RightVector * dodgeDistance
     elseif dodgeDirection == "Back" then
-        table.insert(directions, -Camera.CFrame.LookVector * dodgeDistance)
+        return -Camera.CFrame.LookVector * dodgeDistance
     elseif dodgeDirection == "Forward" then
-        table.insert(directions, Camera.CFrame.LookVector * dodgeDistance)
+        return Camera.CFrame.LookVector * dodgeDistance
     else
-        local projDir = projVel.Unit
+        local projDir = projectile.velocity.Unit
         local perpDir = Vector3.new(-projDir.Z, 0, projDir.X)
         if math.random(1, 2) == 1 then
             perpDir = -perpDir
         end
-        table.insert(directions, perpDir * dodgeDistance)
-        table.insert(directions, -perpDir * dodgeDistance)
+        return perpDir * dodgeDistance
     end
-    
-    return directions
-end
-
-local function OnDodgeComplete()
-    currentDodgeTween = nil
 end
 
 local function PerformDodge(direction)
@@ -434,16 +357,13 @@ local function PerformDodge(direction)
         Enum.EasingDirection.Out
     )
     
-    local success, err = pcall(function()
+    pcall(function()
         currentDodgeTween = TweenService:Create(hrp, tweenInfo, {Position = targetPos})
-        currentDodgeTween.Completed:Connect(OnDodgeComplete)
         currentDodgeTween:Play()
+        currentDodgeTween.Completed:Connect(function()
+            currentDodgeTween = nil
+        end)
     end)
-    
-    if not success then
-        warn("Dodge failed: " .. tostring(err))
-        currentDodgeTween = nil
-    end
     
     dodgeLastDodge = tick()
 end
@@ -465,7 +385,6 @@ local function Dodger()
     if #projectileCache == 0 then return end
     
     local shouldDodge = false
-    local dodgeDir = nil
     local dangerLevel = 0
     
     for _, proj in ipairs(projectileCache) do
@@ -490,50 +409,17 @@ local function Dodger()
             end
             
             if shouldDodge then
-                local directions = GetDodgeDirection(proj)
-                if directions and #directions > 0 then
-                    local bestDir = directions[1]
-                    local bestScore = -math.huge
-                    
-                    for _, dir in ipairs(directions) do
-                        local targetPos = hrp.Position + dir
-                        local score = 0
-                        
-                        for _, otherProj in ipairs(projectileCache) do
-                            local distToOther = (targetPos - otherProj.position).Magnitude
-                            if distToOther < 5 then
-                                score = score - 10
-                            else
-                                score = score + (distToOther / dodgeRadius) * 5
-                            end
-                        end
-                        
-                        local params = GetRaycastParams(char)
-                        local ray = Ray.new(hrp.Position, dir * dodgeDistance)
-                        local hit = workspace:Raycast(ray.Origin, ray.Direction, params)
-                        if hit then
-                            score = score - 20
-                        end
-                        
-                        if score > bestScore then
-                            bestScore = score
-                            bestDir = dir
-                        end
-                    end
-                    
-                    dodgeDir = bestDir
+                local dir = GetDodgeDirection(proj)
+                if dir then
+                    PerformDodge(dir)
+                    return
                 end
-                break
             end
         end
     end
     
     if dodgeOnlyCritical and dangerLevel < 2 then
         return
-    end
-    
-    if dodgeDir and shouldDodge then
-        PerformDodge(dodgeDir)
     end
 end
 
@@ -547,11 +433,8 @@ local function CastVoidSpell(target)
     local char, hrp = GetCharacter()
     if not char or not hrp then return end
     
-    local remote = ReplicatedStorage:FindFirstChild("VoidSpellEvent")
-    if not remote then
-        remote = ReplicatedStorage:FindFirstChild("CastSpell")
-        if not remote then return end
-    end
+    local remote = ReplicatedStorage:FindFirstChild("VoidSpellEvent") or ReplicatedStorage:FindFirstChild("CastSpell")
+    if not remote then return end
     
     local targetPos = target.Character.HumanoidRootPart.Position
     
@@ -681,10 +564,9 @@ end
 
 local Window = Library:CreateWindow({
     Title = "Canvas - Left",
-    Center = false,
+    Center = true,
     AutoShow = true,
     TabWidth = 160,
-    Position = UDim2.new(0, 0, 0, 0)
 })
 
 local MainTab = Window:AddTab("Main")
@@ -692,11 +574,12 @@ local VisualTab = Window:AddTab("Visual")
 local PlayerTab = Window:AddTab("Player")
 local SettingsTab = Window:AddTab("Settings")
 
-local MainLeftGroup = MainTab:AddLeftGroupbox("Ragebot")
-local MainCenterGroup = MainTab:AddLeftGroupbox("Dodge System")
-local MainRightGroup = MainTab:AddRightGroupbox("Void Spam")
+local MainLeftGroup = MainTab:AddLeftTabBox("Ragebot")
+local MainCenterGroup = MainTab:AddLeftTabBox("Dodge System")
+local MainRightGroup = MainTab:AddRightTabBox("Void Spam")
 
-MainLeftGroup:AddToggle("RagebotToggle", {
+-- Ragebot
+MainLeftGroup:AddToggle({
     Text = "Enable Ragebot",
     Default = false,
     Callback = function(v)
@@ -704,7 +587,7 @@ MainLeftGroup:AddToggle("RagebotToggle", {
     end
 })
 
-MainLeftGroup:AddDropdown("RageMode", {
+MainLeftGroup:AddDropdown({
     Text = "Rage Mode",
     Default = 1,
     Options = {"Auto", "Manual", "Smart"},
@@ -713,7 +596,7 @@ MainLeftGroup:AddDropdown("RageMode", {
     end
 })
 
-MainLeftGroup:AddDropdown("RagePriority", {
+MainLeftGroup:AddDropdown({
     Text = "Target Priority",
     Default = 1,
     Options = {"Distance", "Health", "Visibility"},
@@ -722,44 +605,41 @@ MainLeftGroup:AddDropdown("RagePriority", {
     end
 })
 
-MainLeftGroup:AddSlider("RageFOV", {
+MainLeftGroup:AddSlider({
     Text = "Rage FOV",
     Default = 180,
     Min = 30,
     Max = 360,
     Rounding = 0,
-    Compact = false,
     Callback = function(v)
         ragebotFOV = v
         ragebotFOVSize = v
     end
 })
 
-MainLeftGroup:AddSlider("HitChance", {
+MainLeftGroup:AddSlider({
     Text = "Hit Chance (%)",
     Default = 90,
     Min = 10,
     Max = 100,
     Rounding = 0,
-    Compact = false,
     Callback = function(v)
         ragebotHitChance = v
     end
 })
 
-MainLeftGroup:AddSlider("Smoothness", {
+MainLeftGroup:AddSlider({
     Text = "Smoothness",
     Default = 0.5,
     Min = 0.1,
     Max = 1,
     Rounding = 1,
-    Compact = false,
     Callback = function(v)
         ragebotSmoothness = v
     end
 })
 
-MainLeftGroup:AddToggle("Prediction", {
+MainLeftGroup:AddToggle({
     Text = "Prediction",
     Default = true,
     Callback = function(v)
@@ -767,7 +647,7 @@ MainLeftGroup:AddToggle("Prediction", {
     end
 })
 
-MainLeftGroup:AddToggle("Wallbang", {
+MainLeftGroup:AddToggle({
     Text = "Wallbang",
     Default = false,
     Callback = function(v)
@@ -775,7 +655,7 @@ MainLeftGroup:AddToggle("Wallbang", {
     end
 })
 
-MainLeftGroup:AddToggle("AutoShoot", {
+MainLeftGroup:AddToggle({
     Text = "Auto Shoot",
     Default = false,
     Callback = function(v)
@@ -783,7 +663,7 @@ MainLeftGroup:AddToggle("AutoShoot", {
     end
 })
 
-MainLeftGroup:AddToggle("Triggerbot", {
+MainLeftGroup:AddToggle({
     Text = "Triggerbot",
     Default = false,
     Callback = function(v)
@@ -791,7 +671,7 @@ MainLeftGroup:AddToggle("Triggerbot", {
     end
 })
 
-MainLeftGroup:AddToggle("MultiTarget", {
+MainLeftGroup:AddToggle({
     Text = "Multi Target",
     Default = false,
     Callback = function(v)
@@ -799,7 +679,7 @@ MainLeftGroup:AddToggle("MultiTarget", {
     end
 })
 
-MainLeftGroup:AddToggle("Humanization", {
+MainLeftGroup:AddToggle({
     Text = "Humanization",
     Default = false,
     Callback = function(v)
@@ -807,15 +687,8 @@ MainLeftGroup:AddToggle("Humanization", {
     end
 })
 
-MainLeftGroup:AddToggle("HeadshotOnly", {
-    Text = "Headshot Only",
-    Default = false,
-    Callback = function(v)
-        ragebotHeadshotOnly = v
-    end
-})
-
-MainCenterGroup:AddToggle("DodgeToggle", {
+-- Dodge System
+MainCenterGroup:AddToggle({
     Text = "Enable Dodge",
     Default = false,
     Callback = function(v)
@@ -826,7 +699,7 @@ MainCenterGroup:AddToggle("DodgeToggle", {
     end
 })
 
-MainCenterGroup:AddDropdown("DodgeMode", {
+MainCenterGroup:AddDropdown({
     Text = "Dodge Mode",
     Default = 1,
     Options = {"Auto", "Smart", "Manual"},
@@ -835,80 +708,63 @@ MainCenterGroup:AddDropdown("DodgeMode", {
     end
 })
 
-MainCenterGroup:AddSlider("DodgeRadius", {
+MainCenterGroup:AddSlider({
     Text = "Detection Radius",
     Default = 15,
     Min = 5,
     Max = 50,
     Rounding = 0,
-    Compact = false,
     Callback = function(v)
         dodgeRadius = v
         UpdateProjectileCache()
     end
 })
 
-MainCenterGroup:AddSlider("DodgeDistance", {
+MainCenterGroup:AddSlider({
     Text = "Dodge Distance",
     Default = 10,
     Min = 3,
     Max = 30,
     Rounding = 0,
-    Compact = false,
     Callback = function(v)
         dodgeDistance = v
     end
 })
 
-MainCenterGroup:AddSlider("PredictionTime", {
+MainCenterGroup:AddSlider({
     Text = "Prediction Time (s)",
     Default = 0.5,
     Min = 0.1,
     Max = 2,
     Rounding = 1,
-    Compact = false,
     Callback = function(v)
         dodgePredictionTime = math.floor(v * 10) / 10
     end
 })
 
-MainCenterGroup:AddSlider("ReactionTime", {
-    Text = "Reaction Time (s)",
-    Default = 0.1,
-    Min = 0.01,
-    Max = 0.5,
-    Rounding = 2,
-    Compact = false,
-    Callback = function(v)
-        dodgeReactionTime = math.floor(v * 100) / 100
-    end
-})
-
-MainCenterGroup:AddSlider("DodgeSmoothness", {
+MainCenterGroup:AddSlider({
     Text = "Dodge Smoothness",
     Default = 0.3,
     Min = 0.05,
     Max = 1,
     Rounding = 2,
-    Compact = false,
     Callback = function(v)
         dodgeSmoothness = math.floor(v * 100) / 100
     end
 })
 
-MainCenterGroup:AddSlider("DodgeCooldown", {
+MainCenterGroup:AddSlider({
     Text = "Dodge Cooldown (s)",
     Default = 0.5,
     Min = 0.1,
     Max = 2,
     Rounding = 1,
-    Compact = false,
     Callback = function(v)
         dodgeCooldown = math.floor(v * 10) / 10
     end
 })
 
-MainCenterGroup:AddDropdown("DodgeDirection", {
+MainCenterGroup:AddDropdown({
     Text = "Dodge Direction",
     Default = 1,
     Options = {"Random", "Left", "Right", "Back", "Forward", "Smart"},
@@ -917,7 +773,7 @@ MainCenterGroup:AddDropdown("DodgeDirection", {
     end
 })
 
-MainCenterGroup:AddToggle("CriticalOnly", {
+MainCenterGroup:AddToggle({
     Text = "Critical Only",
     Default = false,
     Callback = function(v)
@@ -925,15 +781,8 @@ MainCenterGroup:AddToggle("CriticalOnly", {
     end
 })
 
-MainCenterGroup:AddToggle("DodgeDebug", {
-    Text = "Debug Mode",
-    Default = false,
-    Callback = function(v)
-        dodgeDebug = v
-    end
-})
-
-MainRightGroup:AddToggle("VoidSpamToggle", {
+-- Void Spam
+MainRightGroup:AddToggle({
     Text = "Enable Void Spam",
     Default = false,
     Callback = function(v)
@@ -961,7 +810,7 @@ MainRightGroup:AddToggle("VoidSpamToggle", {
     end
 })
 
-MainRightGroup:AddDropdown("VoidMode", {
+MainRightGroup:AddDropdown({
     Text = "Void Mode",
     Default = 1,
     Options = {"Normal", "Rapid", "Hyper", "Ultimate"},
@@ -970,31 +819,29 @@ MainRightGroup:AddDropdown("VoidMode", {
     end
 })
 
-MainRightGroup:AddSlider("VoidRange", {
+MainRightGroup:AddSlider({
     Text = "Spam Range",
     Default = 50,
     Min = 10,
     Max = 200,
     Rounding = 0,
-    Compact = false,
     Callback = function(v)
         voidSpamRange = v
     end
 })
 
-MainRightGroup:AddSlider("SpamDelay", {
+MainRightGroup:AddSlider({
     Text = "Spam Delay (s)",
     Default = 0.5,
     Min = 0.01,
     Max = 2,
     Rounding = 2,
-    Compact = false,
     Callback = function(v)
         voidSpamDelay = math.floor(v * 100) / 100
     end
 })
 
-MainRightGroup:AddToggle("AutoTarget", {
+MainRightGroup:AddToggle({
     Text = "Auto Target",
     Default = false,
     Callback = function(v)
@@ -1002,7 +849,7 @@ MainRightGroup:AddToggle("AutoTarget", {
     end
 })
 
-MainRightGroup:AddToggle("TargetAll", {
+MainRightGroup:AddToggle({
     Text = "Target All Players",
     Default = false,
     Callback = function(v)
@@ -1010,7 +857,7 @@ MainRightGroup:AddToggle("TargetAll", {
     end
 })
 
-MainRightGroup:AddToggle("MultiCast", {
+MainRightGroup:AddToggle({
     Text = "Multi Cast",
     Default = false,
     Callback = function(v)
@@ -1018,7 +865,7 @@ MainRightGroup:AddToggle("MultiCast", {
     end
 })
 
-MainRightGroup:AddToggle("SilentCast", {
+MainRightGroup:AddToggle({
     Text = "Silent Cast",
     Default = false,
     Callback = function(v)
@@ -1026,7 +873,7 @@ MainRightGroup:AddToggle("SilentCast", {
     end
 })
 
-MainRightGroup:AddToggle("AOE", {
+MainRightGroup:AddToggle({
     Text = "Area of Effect",
     Default = false,
     Callback = function(v)
@@ -1034,7 +881,7 @@ MainRightGroup:AddToggle("AOE", {
     end
 })
 
-MainRightGroup:AddToggle("Randomize", {
+MainRightGroup:AddToggle({
     Text = "Randomize Cast",
     Default = false,
     Callback = function(v)
@@ -1042,7 +889,7 @@ MainRightGroup:AddToggle("Randomize", {
     end
 })
 
-MainRightGroup:AddToggle("CooldownReduction", {
+MainRightGroup:AddToggle({
     Text = "Cooldown Reduction",
     Default = false,
     Callback = function(v)
@@ -1050,7 +897,7 @@ MainRightGroup:AddToggle("CooldownReduction", {
     end
 })
 
-MainRightGroup:AddToggle("EnergyBoost", {
+MainRightGroup:AddToggle({
     Text = "Energy Boost",
     Default = false,
     Callback = function(v)
@@ -1058,11 +905,12 @@ MainRightGroup:AddToggle("EnergyBoost", {
     end
 })
 
-local VisualLeftGroup = VisualTab:AddLeftGroupbox("FOV Circle")
-local VisualCenterGroup = VisualTab:AddLeftGroupbox("Dodge Visuals")
-local VisualRightGroup = VisualTab:AddRightGroupbox("Visual Options")
+-- Visual Tab
+local VisualLeftGroup = VisualTab:AddLeftTabBox("FOV Circle")
+local VisualCenterGroup = VisualTab:AddLeftTabBox("Dodge Visuals")
+local VisualRightGroup = VisualTab:AddRightTabBox("Visual Options")
 
-VisualLeftGroup:AddToggle("FOVCircleToggle", {
+VisualLeftGroup:AddToggle({
     Text = "FOV Circle",
     Default = false,
     Callback = function(v)
@@ -1073,7 +921,7 @@ VisualLeftGroup:AddToggle("FOVCircleToggle", {
     end
 })
 
-VisualLeftGroup:AddColorPicker("FOVColor", {
+VisualLeftGroup:AddColorPicker({
     Text = "FOV Color",
     Default = Color3.fromRGB(255, 0, 0),
     Callback = function(v)
@@ -1081,58 +929,59 @@ VisualLeftGroup:AddColorPicker("FOVColor", {
     end
 })
 
-VisualLeftGroup:AddSlider("FOVSize", {
+VisualLeftGroup:AddSlider({
     Text = "FOV Size",
     Default = 180,
     Min = 50,
     Max = 360,
     Rounding = 0,
-    Compact = false,
     Callback = function(v)
         ragebotFOVSize = v
         ragebotFOV = v
     end
 })
 
-VisualCenterGroup:AddToggle("DodgeVisualize", {
-    Text = "Visualize Dodge",
-    Default = false,
-    Callback = function(v)
-        dodgeVisualize = v
-    end
-})
-
-VisualRightGroup:AddToggle("ESP", {
+VisualRightGroup:AddToggle({
     Text = "Enable ESP",
     Default = false
 })
 
-VisualRightGroup:AddColorPicker("ESPColor", {
+VisualRightGroup:AddColorPicker({
     Text = "ESP Color",
     Default = Color3.fromRGB(255, 255, 255)
 })
 
-VisualRightGroup:AddToggle("Chams", {
+VisualRightGroup:AddToggle({
     Text = "Enable Chams",
     Default = false
 })
 
-VisualRightGroup:AddToggle("NameTags", {
+VisualRightGroup:AddToggle({
     Text = "Show Name Tags",
     Default = true
 })
 
-local PlayerLeftGroup = PlayerTab:AddLeftGroupbox("Player Stats")
-local PlayerRightGroup = PlayerTab:AddRightGroupbox("Player Options")
+-- Player Tab
+local PlayerLeftGroup = PlayerTab:AddLeftTabBox("Player Stats")
+local PlayerRightGroup = PlayerTab:AddRightTabBox("Player Options")
 
-local usernameLabel = PlayerLeftGroup:AddLabel("Username")
-local healthLabel = PlayerLeftGroup:AddLabel("Health")
-local maxHealthLabel = PlayerLeftGroup:AddLabel("MaxHealth")
-local positionLabel = PlayerLeftGroup:AddLabel("Position")
+PlayerLeftGroup:AddLabel({
+    Text = "Username: " .. LocalPlayer.Name
+})
 
-usernameLabel:SetText("Username: " .. LocalPlayer.Name)
+local healthLabel = PlayerLeftGroup:AddLabel({
+    Text = "Health: N/A"
+})
 
-PlayerRightGroup:AddToggle("Fly", {
+local maxHealthLabel = PlayerLeftGroup:AddLabel({
+    Text = "Max Health: N/A"
+})
+
+local positionLabel = PlayerLeftGroup:AddLabel({
+    Text = "Position: N/A"
+})
+
+PlayerRightGroup:AddToggle({
     Text = "Fly Mode",
     Default = false,
     Callback = function(v)
@@ -1144,19 +993,18 @@ PlayerRightGroup:AddToggle("Fly", {
     end
 })
 
-PlayerRightGroup:AddSlider("FlySpeed", {
+PlayerRightGroup:AddSlider({
     Text = "Fly Speed",
     Default = 50,
     Min = 10,
     Max = 200,
     Rounding = 0,
-    Compact = false,
     Callback = function(v)
         flySpeed = v
     end
 })
 
-PlayerRightGroup:AddToggle("Noclip", {
+PlayerRightGroup:AddToggle({
     Text = "Noclip",
     Default = false,
     Callback = function(v)
@@ -1172,7 +1020,7 @@ PlayerRightGroup:AddToggle("Noclip", {
     end
 })
 
-PlayerRightGroup:AddToggle("SpeedBoost", {
+PlayerRightGroup:AddToggle({
     Text = "Speed Boost",
     Default = false,
     Callback = function(v)
@@ -1184,13 +1032,12 @@ PlayerRightGroup:AddToggle("SpeedBoost", {
     end
 })
 
-PlayerRightGroup:AddSlider("WalkSpeed", {
+PlayerRightGroup:AddSlider({
     Text = "Walk Speed",
     Default = 16,
     Min = 16,
     Max = 100,
     Rounding = 0,
-    Compact = false,
     Callback = function(v)
         walkSpeed = v
         if speedEnabled then
@@ -1202,7 +1049,7 @@ PlayerRightGroup:AddSlider("WalkSpeed", {
     end
 })
 
-PlayerRightGroup:AddToggle("InfiniteJump", {
+PlayerRightGroup:AddToggle({
     Text = "Infinite Jump",
     Default = false,
     Callback = function(v)
@@ -1214,13 +1061,12 @@ PlayerRightGroup:AddToggle("InfiniteJump", {
     end
 })
 
-PlayerRightGroup:AddSlider("JumpPower", {
+PlayerRightGroup:AddSlider({
     Text = "Jump Power",
     Default = 50,
     Min = 50,
     Max = 200,
     Rounding = 0,
-    Compact = false,
     Callback = function(v)
         jumpPower = v
         if infiniteJumpEnabled then
@@ -1232,82 +1078,83 @@ PlayerRightGroup:AddSlider("JumpPower", {
     end
 })
 
-local SettingsGroup = SettingsTab:AddLeftGroupbox("Configuration")
-local SettingsRightGroup = SettingsTab:AddRightGroupbox("Theme")
+-- Settings Tab
+local SettingsGroup = SettingsTab:AddLeftTabBox("Configuration")
+local SettingsRightGroup = SettingsTab:AddRightTabBox("Theme")
 
-SettingsGroup:AddToggle("SaveOnExit", {
+SettingsGroup:AddToggle({
     Text = "Save Settings on Exit",
     Default = true
 })
 
-SettingsGroup:AddButton("SaveConfig", {
+SettingsGroup:AddButton({
     Text = "Save Config",
     Func = function()
-        local success, err = pcall(function()
-            SaveManager:Save()
-        end)
-        if not success then
-            warn("Save failed: " .. tostring(err))
+        if SaveManager then
+            pcall(function()
+                SaveManager:Save()
+            end)
         end
     end
 })
 
-SettingsGroup:AddButton("LoadConfig", {
+SettingsGroup:AddButton({
     Text = "Load Config",
     Func = function()
-        local success, err = pcall(function()
-            SaveManager:Load()
-        end)
-        if not success then
-            warn("Load failed: " .. tostring(err))
+        if SaveManager then
+            pcall(function()
+                SaveManager:Load()
+            end)
         end
     end
 })
 
-SettingsGroup:AddButton("ResetConfig", {
+SettingsGroup:AddButton({
     Text = "Reset Config",
     Func = function()
-        local success, err = pcall(function()
-            SaveManager:Reset()
-        end)
-        if not success then
-            warn("Reset failed: " .. tostring(err))
+        if SaveManager then
+            pcall(function()
+                SaveManager:Reset()
+            end)
         end
     end
 })
 
-SettingsRightGroup:AddDropdown("ThemeDropdown", {
+SettingsRightGroup:AddDropdown({
     Text = "UI Theme",
     Default = 1,
     Options = {"Default", "Dark", "Light", "Neon", "Pastel", "Cyberpunk"},
     Callback = function(value)
-        local success, err = pcall(function()
-            ThemeManager:SetTheme(value)
-        end)
-        if not success then
-            warn("Theme change failed: " .. tostring(err))
+        if ThemeManager then
+            pcall(function()
+                ThemeManager:SetTheme(value)
+            end)
         end
     end
 })
 
-SettingsRightGroup:AddButton("ResetTheme", {
+SettingsRightGroup:AddButton({
     Text = "Reset Theme",
     Func = function()
-        local success, err = pcall(function()
-            ThemeManager:SetTheme("Default")
-        end)
-        if not success then
-            warn("Theme reset failed: " .. tostring(err))
+        if ThemeManager then
+            pcall(function()
+                ThemeManager:SetTheme("Default")
+            end)
         end
     end
 })
 
-SaveManager:SetLibrary(Library)
-ThemeManager:SetLibrary(Library)
-SaveManager:IgnoreThemeSettings()
-SaveManager:SetIgnoreIndexes({})
-ThemeManager:SetFolder("CanvasLeft")
-SaveManager:SetFolder("CanvasLeft/saves")
+if SaveManager then
+    SaveManager:SetLibrary(Library)
+    SaveManager:IgnoreThemeSettings()
+    SaveManager:SetIgnoreIndexes({})
+    SaveManager:SetFolder("CanvasLeft/saves")
+end
+
+if ThemeManager then
+    ThemeManager:SetLibrary(Library)
+    ThemeManager:SetFolder("CanvasLeft/themes")
+end
 
 Library:OnUnload(function()
     voidSpamEnabled = false
@@ -1315,51 +1162,24 @@ Library:OnUnload(function()
         voidSpamConnection:Disconnect()
         voidSpamConnection = nil
     end
-    voidSpamTimer = 0
-    
-    ragebotEnabled = false
-    dodgeEnabled = false
-    flyEnabled = false
-    noclipEnabled = false
-    speedEnabled = false
-    infiniteJumpEnabled = false
-    
-    if currentDodgeTween then
-        currentDodgeTween:Cancel()
-        currentDodgeTween = nil
-    end
-    
-    if fovCircle then
-        fovCircle:Remove()
-        fovCircle = nil
-    end
-    
     if characterAddedConnection then
         characterAddedConnection:Disconnect()
         characterAddedConnection = nil
     end
-    
-    if descendantAddedConnection then
-        descendantAddedConnection:Disconnect()
-        descendantAddedConnection = nil
+    if currentDodgeTween then
+        currentDodgeTween:Cancel()
+        currentDodgeTween = nil
     end
-    
-    for i = #targetTable, 1, -1 do
-        table.remove(targetTable, i)
-    end
-    
-    for i = #projectileCache, 1, -1 do
-        table.remove(projectileCache, i)
+    if fovCircle then
+        fovCircle:Remove()
+        fovCircle = nil
     end
 end)
 
-local success4, err4 = pcall(function()
-    SaveManager:Load()
-    ThemeManager:Load()
+pcall(function()
+    if SaveManager then SaveManager:Load() end
+    if ThemeManager then ThemeManager:Load() end
 end)
-if not success4 then
-    warn("Initial load failed: " .. tostring(err4))
-end
 
 Library:SetWatermarkVisibility(true)
 Library:SetWatermark("Canvas - Left | Ready")
@@ -1372,30 +1192,22 @@ characterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(char)
             humanoid.PlatformStand = true
         end
         if noclipEnabled then
-            ApplyNoclip(character)
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
         end
         if speedEnabled then
-            humanoid.WalkSpeed = walkSpeed
-        end
+            humanoid.WalkSpeed = walkSpeed        end
         if infiniteJumpEnabled then
             humanoid.JumpPower = jumpPower
         end
     end
     UpdateProjectileCache()
-    
-    if descendantAddedConnection then
-        descendantAddedConnection:Disconnect()
-        descendantAddedConnection = nil
-    end
-    
-    descendantAddedConnection = char.DescendantAdded:Connect(function(descendant)
-        if noclipEnabled and descendant:IsA("BasePart") then
-            descendant.CanCollide = false
-        end
-    end)
 end)
 
-local function OnRenderStep()
+RunService.RenderStepped:Connect(function()
     pcall(function()
         if ragebotEnabled then
             Ragebot()
@@ -1438,18 +1250,4 @@ local function OnRenderStep()
             end
         end
     end)
-end
-
-RunService.RenderStepped:Connect(OnRenderStep)
-
-if LocalPlayer.Character then
-    task.wait(0.5)
-    local char = LocalPlayer.Character
-    if char then
-        descendantAddedConnection = char.DescendantAdded:Connect(function(descendant)
-            if noclipEnabled and descendant:IsA("BasePart") then
-                descendant.CanCollide = false
-            end
-        end)
-    end
-end
+end)
