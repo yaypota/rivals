@@ -21,7 +21,7 @@ local playerListReady = false
 local voidX = 0
 local voidY = -50
 local voidZ = 0
-local voidPosition = nil
+local voidPosition = CFrame.new(0, -50, 0)
 local voidPositionConnection = nil
 local voidTeleportEnabled = false
 local voidSpamEnabled = false
@@ -298,6 +298,7 @@ local function SetupVoidFeatures()
         Rounding = 1,
         Callback = function(value)
             voidX = value
+            voidPosition = CFrame.new(voidX, voidY, voidZ)
         end
     })
 
@@ -310,6 +311,7 @@ local function SetupVoidFeatures()
         Rounding = 1,
         Callback = function(value)
             voidY = value
+            voidPosition = CFrame.new(voidX, voidY, voidZ)
         end
     })
 
@@ -322,6 +324,7 @@ local function SetupVoidFeatures()
         Rounding = 1,
         Callback = function(value)
             voidZ = value
+            voidPosition = CFrame.new(voidX, voidY, voidZ)
         end
     })
 
@@ -352,6 +355,10 @@ local function SetupVoidFeatures()
                     if not voidPosition then
                         voidPosition = CFrame.new(voidX, voidY, voidZ)
                         Notify("Void Teleport", "Using default position", 2)
+                    end
+                    if voidPositionConnection then
+                        voidPositionConnection:Disconnect()
+                        voidPositionConnection = nil
                     end
                     voidPositionConnection = RunService.Heartbeat:Connect(function()
                         if not voidTeleportActive then return end
@@ -384,6 +391,10 @@ local function SetupVoidFeatures()
                 if not voidPosition then
                     voidPosition = CFrame.new(voidX, voidY, voidZ)
                     Notify("Void Teleport", "Using default position", 2)
+                end
+                if voidPositionConnection then
+                    voidPositionConnection:Disconnect()
+                    voidPositionConnection = nil
                 end
                 voidPositionConnection = RunService.Heartbeat:Connect(function()
                     if not voidTeleportActive then return end
@@ -501,6 +512,10 @@ local function SetupVoidFeatures()
                     end
                     isHiding = true
                     lastSwitch = tick()
+                    if voidSpamConnection then
+                        voidSpamConnection:Disconnect()
+                        voidSpamConnection = nil
+                    end
                     voidSpamConnection = RunService.Heartbeat:Connect(function()
                         if not voidSpamActive then return end
                         if not LocalPlayer.Character then return end
@@ -549,6 +564,10 @@ local function SetupVoidFeatures()
                 end
                 isHiding = true
                 lastSwitch = tick()
+                if voidSpamConnection then
+                    voidSpamConnection:Disconnect()
+                    voidSpamConnection = nil
+                end
                 voidSpamConnection = RunService.Heartbeat:Connect(function()
                     if not voidSpamActive then return end
                     if not LocalPlayer.Character then return end
