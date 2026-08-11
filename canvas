@@ -14,79 +14,148 @@ local MainTab = Window:AddTab("Main")
 local PlayerTab = Window:AddTab("Player")
 local SettingsTab = Window:AddTab("Settings")
 
-local MainLeftGroup = MainTab:AddLeftGroupbox("Main Features")
+local MainLeftGroup = MainTab:AddLeftGroupbox("Teleport Features")
 local MainRightGroup = MainTab:AddRightGroupbox("Void Features")
 
-local PlayerLeftGroup = PlayerTab:AddLeftGroupbox("Player Stats")
-local PlayerRightGroup = PlayerTab:AddRightGroupbox("Combat Settings")
+local PlayerLeftGroup = PlayerTab:AddLeftGroupbox("Movement")
+local PlayerRightGroup = PlayerTab:AddRightGroupbox("Jump")
 
 local SettingsGroup = SettingsTab:AddLeftGroupbox("Configuration")
+local UISettingsGroup = SettingsTab:AddRightGroupbox("UI Settings")
 
 local teleportEnabled = false
-local enemyTeleportLoop = nil
+local teleportLoop = nil
+local selectedPlayer = nil
+local teleportMode = "Behind"
 
-MainLeftGroup:AddToggle("PlayerTeleport", {
+MainLeftGroup:AddDropdown("Target Player", {
+    Text = "Target Player",
+    Description = "Select player to teleport to",
+    Values = function()
+        local players = {}
+        for _, v in ipairs(game.Players:GetPlayers()) do
+            if v ~= game.Players.LocalPlayer then
+                table.insert(players, v.Name)
+            end
+        end
+        return players
+    end,
+    Default = "",
+    Callback = function(value)
+        selectedPlayer = value
+    end
+})
+
+MainLeftGroup:AddDropdown("Teleport Mode", {
+    Text = "Teleport Mode",
+    Description = "Choose teleport position",
+    Values = {"Behind", "Above", "Underground"},
+    Default = "Behind",
+    Callback = function(value)
+        teleportMode = value
+    end
+})
+
+MainLeftGroup:AddToggle("Player Teleport", {
     Text = "Player Teleport",
-    Description = "Teleports to the nearest enemy continuously",
+    Description = "Teleports to selected player continuously",
     Default = false,
     Callback = function(state)
         teleportEnabled = state
         local player = game.Players.LocalPlayer
         
         if teleportEnabled then
-            enemyTeleportLoop = game:GetService("RunService").Heartbeat:Connect(function()
+            teleportLoop = game:GetService("RunService").Heartbeat:Connect(function()
                 if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
                     return
                 end
                 
-                local closestEnemy = nil
-                local closestDistance = math.huge
-                local myPosition = player.Character.HumanoidRootPart.Position
-                
-                for _, otherPlayer in ipairs(game.Players:GetPlayers()) do
-                    if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                        local enemyPosition = otherPlayer.Character.HumanoidRootPart.Position
-                        local distance = (myPosition - enemyPosition).Magnitude
-                        
-                        if distance < closestDistance and distance < 100 then
-                            closestEnemy = otherPlayer
-                            closestDistance = distance
-                        end
+                local target = nil
+                for _, v in ipairs(game.Players:GetPlayers()) do
+                    if v.Name == selectedPlayer and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                        target = v
+                        break
                     end
                 end
                 
-                if closestEnemy then
-                    local targetPosition = closestEnemy.Character.HumanoidRootPart.Position
-                    local teleportCFrame = CFrame.new(targetPosition + Vector3.new(0, 2, 0))
-                    player.Character.HumanoidRootPart.CFrame = teleportCFrame
+                if not target then return end
+                
+                local targetPos = target.Character.HumanoidRootPart.Position
+                local teleportPos = targetPos
+                
+                if teleportMode == "Behind" then
+                    local behindPos = targetPos - target.Character.HumanoidRootPart.CFrame.LookVector * 3
+                    teleportPos = behindPos
+                elseif teleportMode == "Above" then
+                    teleportPos = targetPos + Vector3.new(0, 5, 0)
+                elseif teleportMode == "Underground" then
+                    teleportPos = targetPos + Vector3.new(0, -3, 0)
                 end
+                
+                player.Character.HumanoidRootPart.CFrame = CFrame.new(teleportPos)
             end)
         else
-            if enemyTeleportLoop then
-                enemyTeleportLoop:Disconnect()
-                enemyTeleportLoop = nil
+            if teleportLoop then
+                teleportLoop:Disconnect()
+                teleportLoop = nil
             end
         end
     end
 })
 
+local voidX = 0
+local voidY = 0
+local voidZ = 0
 local voidPosition = nil
 local voidPositionConnection = nil
 
+MainRightGroup:AddSlider("Void X", {
+    Text = "Void X",
+    Description = "X axis position for void teleport",
+    Default = 0,
+    Min = 0,
+    Max = 100000,
+    Rounding = 1,
+    Callback = function(value)
+        voidX = value
+    end
+})
+
+MainRightGroup:AddSlider("Void Y", {
+    Text = "Void Y",
+    Description = "Y axis position for void teleport",
+    Default = 0,
+    Min = 0,
+    Max = 100000,
+    Rounding = 1,
+    Callback = function(value)
+        voidY = value
+    end
+})
+
+MainRightGroup:AddSlider("Void Z", {
+    Text = "Void Z",
+    Description = "Z axis position for void teleport",
+    Default = 0,
+    Min = 0,
+    Max = 100000,
+    Rounding = 1,
+    Callback = function(value)
+        voidZ = value
+    end
+})
+
 MainRightGroup:AddButton({
     Text = "Set Void Position",
-    Description = "Saves current position for void teleport",
+    Description = "Sets void teleport position from XYZ values",
     Func = function()
-        local player = game.Players.LocalPlayer
-        if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            voidPosition = player.Character.HumanoidRootPart.CFrame
-        end
+        voidPosition = CFrame.new(voidX, voidY, voidZ)
     end
 })
 
 MainRightGroup:AddToggle("Void Teleport", {
     Text = "Void Teleport",
-    Description = "Teleports to saved position when falling into void",
+    Description = "Teleports to XYZ position when falling into void",
     Default = false,
     Callback = function(state)
         local player = game.Players.LocalPlayer
@@ -117,31 +186,62 @@ MainRightGroup:AddToggle("Void Teleport", {
 
 local voidSpamEnabled = false
 local voidSpamConnection = nil
-local spamPosition = nil
+local voidHideTime = 0.1
+local voidAttackTime = 0.1
+local voidSpamPosition = nil
+local isHiding = true
+local lastSwitch = 0
+
+MainRightGroup:AddSlider("Void Hide Time", {
+    Text = "Void Hide Time",
+    Description = "Time to stay hidden in void (seconds)",
+    Default = 0.1,
+    Min = 0.01,
+    Max = 5,
+    Rounding = 2,
+    Callback = function(value)
+        voidHideTime = value
+    end
+})
+
+MainRightGroup:AddSlider("Void Attack Time", {
+    Text = "Void Attack Time",
+    Description = "Time to attack (seconds)",
+    Default = 0.1,
+    Min = 0.01,
+    Max = 5,
+    Rounding = 2,
+    Callback = function(value)
+        voidAttackTime = value
+    end
+})
 
 MainRightGroup:AddButton({
-    Text = "Set Spam Position",
-    Description = "Sets position for void spam teleport",
+    Text = "Set Void Spam Position",
+    Description = "Sets position for void spam",
     Func = function()
         local player = game.Players.LocalPlayer
         if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            spamPosition = player.Character.HumanoidRootPart.Position
+            voidSpamPosition = player.Character.HumanoidRootPart.Position
         end
     end
 })
 
 MainRightGroup:AddToggle("Void Spam", {
     Text = "Void Spam",
-    Description = "Spams teleport to position when in void",
+    Description = "Spams between void and attack position",
     Default = false,
     Callback = function(state)
         voidSpamEnabled = state
         local player = game.Players.LocalPlayer
         
         if voidSpamEnabled then
-            if not spamPosition then
+            if not voidSpamPosition then
                 return
             end
+            
+            isHiding = true
+            lastSwitch = tick()
             
             voidSpamConnection = game:GetService("RunService").Heartbeat:Connect(function()
                 if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
@@ -149,8 +249,22 @@ MainRightGroup:AddToggle("Void Spam", {
                 end
                 
                 local humanoidRootPart = player.Character.HumanoidRootPart
+                local currentTime = tick()
+                
                 if humanoidRootPart.Position.Y < -50 then
-                    humanoidRootPart.CFrame = CFrame.new(spamPosition)
+                    if isHiding then
+                        if currentTime - lastSwitch >= voidHideTime then
+                            isHiding = false
+                            lastSwitch = currentTime
+                            humanoidRootPart.CFrame = CFrame.new(voidSpamPosition)
+                        end
+                    else
+                        if currentTime - lastSwitch >= voidAttackTime then
+                            isHiding = true
+                            lastSwitch = currentTime
+                            humanoidRootPart.CFrame = CFrame.new(voidSpamPosition + Vector3.new(0, -100, 0))
+                        end
+                    end
                 end
             end)
         else
@@ -164,6 +278,8 @@ MainRightGroup:AddToggle("Void Spam", {
 
 local walkSpeedValue = 16
 local jumpPowerValue = 50
+local infinityJumpEnabled = false
+local infinityJumpConnection = nil
 
 PlayerLeftGroup:AddSlider("Walk Speed", {
     Text = "Walk Speed",
@@ -186,7 +302,7 @@ PlayerLeftGroup:AddSlider("Jump Power", {
     Description = "Changes player's jump power",
     Default = 50,
     Min = 50,
-    Max = 150,
+    Max = 300,
     Rounding = 1,
     Callback = function(value)
         jumpPowerValue = value
@@ -197,107 +313,80 @@ PlayerLeftGroup:AddSlider("Jump Power", {
     end
 })
 
-PlayerLeftGroup:AddToggle("Auto Jump", {
-    Text = "Auto Jump",
-    Description = "Automatically jumps when possible",
+PlayerLeftGroup:AddToggle("Infinity Jump", {
+    Text = "Infinity Jump",
+    Description = "Allows unlimited jumps",
     Default = false,
     Callback = function(state)
-        -- Auto jump logic here
-    end
-})
-
-local aimbotEnabled = false
-local aimbotConnection = nil
-
-PlayerRightGroup:AddToggle("Aimbot", {
-    Text = "Aimbot",
-    Description = "Automatically aims at nearest enemy",
-    Default = false,
-    Callback = function(state)
-        aimbotEnabled = state
+        infinityJumpEnabled = state
         local player = game.Players.LocalPlayer
         
-        if aimbotEnabled then
-            aimbotConnection = game:GetService("RunService").Heartbeat:Connect(function()
-                if not player or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+        if infinityJumpEnabled then
+            infinityJumpConnection = game:GetService("RunService").Heartbeat:Connect(function()
+                if not player or not player.Character or not player.Character:FindFirstChild("Humanoid") then
                     return
                 end
                 
-                local closestEnemy = nil
-                local closestDistance = math.huge
-                local myPosition = player.Character.HumanoidRootPart.Position
-                
-                for _, otherPlayer in ipairs(game.Players:GetPlayers()) do
-                    if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                        local enemyPosition = otherPlayer.Character.HumanoidRootPart.Position
-                        local distance = (myPosition - enemyPosition).Magnitude
-                        
-                        if distance < closestDistance and distance < 100 then
-                            closestEnemy = otherPlayer
-                            closestDistance = distance
-                        end
-                    end
-                end
-                
-                if closestEnemy then
-                    -- Aimbot logic here
-                end
+                local humanoid = player.Character.Humanoid
+                humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+                humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
             end)
         else
-            if aimbotConnection then
-                aimbotConnection:Disconnect()
-                aimbotConnection = nil
+            if infinityJumpConnection then
+                infinityJumpConnection:Disconnect()
+                infinityJumpConnection = nil
             end
         end
     end
 })
 
-PlayerRightGroup:AddToggle("Instant Kill", {
-    Text = "Instant Kill",
-    Description = "Kills enemies instantly on hit",
-    Default = false,
-    Callback = function(state)
-        -- Instant kill logic here
-    end
-})
+local configs = {}
+local selectedConfig = ""
 
-PlayerRightGroup:AddToggle("No Recoil", {
-    Text = "No Recoil",
-    Description = "Removes weapon recoil",
-    Default = false,
-    Callback = function(state)
-        -- No recoil logic here
-    end
-})
-
-SettingsGroup:AddDropdown("Theme", {
-    Text = "Theme",
-    Description = "Changes UI theme color",
-    Values = {"Dark", "Light", "Blue", "Red", "Purple", "Green"},
-    Default = "Dark",
+SettingsGroup:AddDropdown("Select Config", {
+    Text = "Select Config",
+    Description = "Choose a config to load",
+    Values = function()
+        local configList = {}
+        for _, v in ipairs(SaveManager:GetConfigList()) do
+            table.insert(configList, v)
+        end
+        if #configList == 0 then
+            table.insert(configList, "No Configs")
+        end
+        return configList
+    end,
+    Default = "No Configs",
     Callback = function(value)
-        ThemeManager:SetTheme(value)
+        selectedConfig = value
     end
 })
 
-SettingsGroup:AddToggle("Watermark", {
-    Text = "Show Watermark",
-    Description = "Shows watermark on screen",
-    Default = true,
-    Callback = function(state)
-        Library:SetWatermarkVisibility(state)
+SettingsGroup:AddButton({
+    Text = "Load Config",
+    Description = "Loads selected config",
+    Func = function()
+        if selectedConfig and selectedConfig ~= "No Configs" then
+            SaveManager:LoadConfig(selectedConfig)
+        end
     end
 })
 
-SettingsGroup:AddSlider("Watermark Opacity", {
-    Text = "Watermark Opacity",
-    Description = "Changes watermark transparency",
-    Default = 1,
-    Min = 0,
-    Max = 1,
-    Rounding = 2,
-    Callback = function(value)
-        -- Watermark opacity logic here
+SettingsGroup:AddButton({
+    Text = "Save Config",
+    Description = "Saves current settings as new config",
+    Func = function()
+        SaveManager:Save()
+    end
+})
+
+SettingsGroup:AddButton({
+    Text = "Delete Config",
+    Description = "Deletes selected config",
+    Func = function()
+        if selectedConfig and selectedConfig ~= "No Configs" then
+            SaveManager:DeleteConfig(selectedConfig)
+        end
     end
 })
 
@@ -309,19 +398,42 @@ SettingsGroup:AddButton({
     end
 })
 
-SettingsGroup:AddButton({
-    Text = "Save Settings",
-    Description = "Saves current settings",
-    Func = function()
-        SaveManager:Save()
+UISettingsGroup:AddDropdown("UI Theme", {
+    Text = "UI Theme",
+    Description = "Changes UI theme color",
+    Values = {"Dark", "Light", "Blue", "Red", "Purple", "Green", "Orange", "Pink"},
+    Default = "Dark",
+    Callback = function(value)
+        ThemeManager:SetTheme(value)
     end
 })
 
-SettingsGroup:AddButton({
-    Text = "Load Settings",
-    Description = "Loads saved settings",
+UISettingsGroup:AddToggle("Watermark", {
+    Text = "Show Watermark",
+    Description = "Shows watermark on screen",
+    Default = true,
+    Callback = function(state)
+        Library:SetWatermarkVisibility(state)
+    end
+})
+
+UISettingsGroup:AddSlider("Watermark Opacity", {
+    Text = "Watermark Opacity",
+    Description = "Changes watermark transparency",
+    Default = 1,
+    Min = 0,
+    Max = 1,
+    Rounding = 2,
+    Callback = function(value)
+        Library:SetWatermarkTransparency(value)
+    end
+})
+
+UISettingsGroup:AddButton({
+    Text = "Refresh Player List",
+    Description = "Refreshes target player dropdown",
     Func = function()
-        SaveManager:Load()
+        -- Refresh logic handled by dropdown's Values function
     end
 })
 
