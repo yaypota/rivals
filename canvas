@@ -744,6 +744,8 @@ local function SetupSettingsTab()
 
     SettingsGroup:AddDivider()
 
+    SettingsGroup:AddLabel("Config Management")
+
     configDropdown = SettingsGroup:AddDropdown("Select Config", {
         Text = "Select Config",
         Description = "Choose a config",
@@ -763,6 +765,22 @@ local function SetupSettingsTab()
         end
     })
     configReady = true
+
+    SettingsGroup:AddButton({
+        Text = "Create Config",
+        Description = "Create a new config",
+        Func = function()
+            local success, err = pcall(function()
+                SaveManager:Save()
+            end)
+            if success then
+                UpdateConfigList()
+                Notify("Config", "Created successfully", 2)
+            else
+                Notify("Error", "Failed to create config", 2)
+            end
+        end
+    })
 
     SettingsGroup:AddButton({
         Text = "Load Config",
@@ -860,9 +878,11 @@ local function SetupSettingsTab()
         end
     })
 
+    UISettingsGroup:AddLabel("UI Settings")
+
     UISettingsGroup:AddDropdown("UI Theme", {
         Text = "UI Theme",
-        Description = "Changes UI theme",
+        Description = "Changes UI theme color",
         Values = {"Dark", "Light", "Blue", "Red", "Purple", "Green", "Orange", "Pink"},
         Default = "Dark",
         Callback = function(value)
