@@ -91,25 +91,47 @@ local infiniteJumpEnabled = false
 local jumpPower = 50
 
 local voidSpamConnection = nil
+local characterAddedConnection = nil
+local descendantAddedConnection = nil
 local currentDodgeTween = nil
 local fovCircle = nil
 local lastUpdate = 0
 local projectileCache = {}
 local targetTable = {}
-local isCharacterValid = false
+local voidSpamTimer = 0
+local raycastParams = RaycastParams.new()
+raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+raycastParams.IgnoreWater = true
 
 local function GetCharacter()
     local char = LocalPlayer.Character
-    if not char then return nil, nil end
+    if not char then return nil, nil, nil end
     local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil, nil end
+    if not hrp then return nil, nil, nil end
     local humanoid = char:FindFirstChild("Humanoid")
-    if not humanoid then return nil, nil end
+    if not humanoid then return nil, nil, nil end
     return char, hrp, humanoid
 end
 
+local function GetRaycastParams(character)
+    raycastParams.FilterDescendantsInstances = {character}
+    return raycastParams
+end
+
+local function ApplyNoclip(character)
+    if not noclipEnabled or not character then return end
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+        end
+    end
+end
+
 local function UpdateProjectileCache()
-    projectileCache = {}
+    for i = #projectileCache, 1, -1 do
+        table.remove(projectileCache, i)
+    end
+    
     local char, hrp = GetCharacter()
     if not char or not hrp then return end
     local playerPos = hrp.Position
@@ -117,15 +139,21 @@ local function UpdateProjectileCache()
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Parent and not obj.Parent:IsA("Player") then
             local isProjectile = false
-            local name = obj.Name:lower()
             
-            if name:find("projectile") or name:find("bullet") or name:find("missile") or 
-               name:find("rocket") or name:find("ball") or name:find("orb") or
-               name:find("shot") or name:find("beam") or name:find("laser") or name:find("void") then
+            if obj:IsA("Projectile") or obj:IsA("Bullet") then
                 isProjectile = true
+            elseif obj:GetAttribute("IsProjectile") then
+                isProjectile = true
+            else
+                local name = obj.Name:lower()
+                if name:find("projectile") or name:find("bullet") or name:find("missile") or 
+                   name:find("rocket") or name:find("ball") or name:find("orb") or
+                   name:find("shot") or name:find("beam") or name:find("laser") or name:find("void") then
+                    isProjectile = true
+                end
             end
             
-            if not isProjectile and obj.Velocity.Magnitude > 10 then
+            if not isProjectile and obj.Velocity and obj.Velocity.Magnitude > 10 then
                 isProjectile = true
             end
             
@@ -145,7 +173,10 @@ local function UpdateProjectileCache()
 end
 
 local function GetRageTargets()
-    table.clear(targetTable)
+    for i = #targetTable, 1, -1 do
+        table.remove(targetTable, i)
+    end
+    
     local char, hrp = GetCharacter()
     if not char or not hrp then return targetTable end
     
@@ -185,6 +216,10 @@ local function GetRageTargets()
     return targetTable
 end
 
+local function SmoothAim(currentPos, targetPos)
+    return currentPos + (targetPos - currentPos) * ragebotSmoothness
+end
+
 local function FireRageShot(targetPos)
     local char, hrp = GetCharacter()
     if not char or not hrp then return end
@@ -192,14 +227,16 @@ local function FireRageShot(targetPos)
     local remote = ReplicatedStorage:FindFirstChild("ShootEvent")
     if not remote then
         remote = ReplicatedStorage:FindFirstChild("Attack")
-        if not remote then
-            return
-        end
+        if not remote then return end
     end
     
-    pcall(function()
+    local success, err = pcall(function()
         remote:FireServer(targetPos)
     end)
+    if not success then
+        warn("FireRageShot failed: " .. tostring(err))
+        return
+    end
     
     if ragebotHumanization then
         local randomOffset = Vector3.new(
@@ -238,13 +275,18 @@ local function Ragebot()
     end
     
     if bestTarget then
+        local targetPos
         if ragebotPrediction then
             local velocity = bestTarget.hrp.Velocity
-            local predictedPos = bestTarget.hrp.Position + (velocity * ragebotPredictionMultiplier)
-            FireRageShot(predictedPos)
+            targetPos = bestTarget.hrp.Position + (velocity * ragebotPredictionMultiplier)
         else
-            FireRageShot(bestTarget.hrp.Position)
+            targetPos = bestTarget.hrp.Position
         end
+        
+        -- スムーズネス適用
+        local currentPos = hrp.Position
+        local smoothPos = SmoothAim(currentPos, targetPos)
+        FireRageShot(smoothPos)
         
         if ragebotWallbang then
             local remote = ReplicatedStorage:FindFirstChild("WallbangEvent")
@@ -372,6 +414,10 @@ local function GetDodgeDirection(projectile)
     return directions
 end
 
+local function OnDodgeComplete()
+    currentDodgeTween = nil
+end
+
 local function PerformDodge(direction)
     local char, hrp = GetCharacter()
     if not char or not hrp then return end
@@ -388,13 +434,16 @@ local function PerformDodge(direction)
         Enum.EasingDirection.Out
     )
     
-    pcall(function()
+    local success, err = pcall(function()
         currentDodgeTween = TweenService:Create(hrp, tweenInfo, {Position = targetPos})
+        currentDodgeTween.Completed:Connect(OnDodgeComplete)
         currentDodgeTween:Play()
-        currentDodgeTween.Completed:Connect(function()
-            currentDodgeTween = nil
-        end)
     end)
+    
+    if not success then
+        warn("Dodge failed: " .. tostring(err))
+        currentDodgeTween = nil
+    end
     
     dodgeLastDodge = tick()
 end
@@ -459,13 +508,9 @@ local function Dodger()
                             end
                         end
                         
-                        local raycastParams = RaycastParams.new()
-                        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-                        raycastParams.FilterDescendantsInstances = {char}
-                        raycastParams.IgnoreWater = true
-                        
+                        local params = GetRaycastParams(char)
                         local ray = Ray.new(hrp.Position, dir * dodgeDistance)
-                        local hit = workspace:Raycast(ray.Origin, ray.Direction, raycastParams)
+                        local hit = workspace:Raycast(ray.Origin, ray.Direction, params)
                         if hit then
                             score = score - 20
                         end
@@ -894,16 +939,23 @@ MainRightGroup:AddToggle("VoidSpamToggle", {
     Callback = function(v)
         voidSpamEnabled = v
         if v then
-            if voidSpamConnection then return end
-            voidSpamConnection = RunService.Heartbeat:Connect(function()
-                if voidSpamEnabled then
-                    VoidSpam()
-                end
-            end)
+            if not voidSpamConnection then
+                voidSpamTimer = 0
+                voidSpamConnection = RunService.Heartbeat:Connect(function(deltaTime)
+                    if voidSpamEnabled then
+                        voidSpamTimer = voidSpamTimer + deltaTime
+                        if voidSpamTimer >= voidSpamDelay then
+                            voidSpamTimer = 0
+                            VoidSpam()
+                        end
+                    end
+                end)
+            end
         else
             if voidSpamConnection then
                 voidSpamConnection:Disconnect()
                 voidSpamConnection = nil
+                voidSpamTimer = 0
             end
         end
     end
@@ -939,17 +991,6 @@ MainRightGroup:AddSlider("SpamDelay", {
     Compact = false,
     Callback = function(v)
         voidSpamDelay = math.floor(v * 100) / 100
-        if voidSpamConnection then
-            voidSpamConnection:Disconnect()
-            voidSpamConnection = nil
-            if voidSpamEnabled then
-                voidSpamConnection = RunService.Heartbeat:Connect(function()
-                    if voidSpamEnabled then
-                        VoidSpam()
-                    end
-                end)
-            end
-        end
     end
 })
 
@@ -1202,27 +1243,36 @@ SettingsGroup:AddToggle("SaveOnExit", {
 SettingsGroup:AddButton("SaveConfig", {
     Text = "Save Config",
     Func = function()
-        pcall(function()
+        local success, err = pcall(function()
             SaveManager:Save()
         end)
+        if not success then
+            warn("Save failed: " .. tostring(err))
+        end
     end
 })
 
 SettingsGroup:AddButton("LoadConfig", {
     Text = "Load Config",
     Func = function()
-        pcall(function()
+        local success, err = pcall(function()
             SaveManager:Load()
         end)
+        if not success then
+            warn("Load failed: " .. tostring(err))
+        end
     end
 })
 
 SettingsGroup:AddButton("ResetConfig", {
     Text = "Reset Config",
     Func = function()
-        pcall(function()
+        local success, err = pcall(function()
             SaveManager:Reset()
         end)
+        if not success then
+            warn("Reset failed: " .. tostring(err))
+        end
     end
 })
 
@@ -1231,18 +1281,24 @@ SettingsRightGroup:AddDropdown("ThemeDropdown", {
     Default = 1,
     Options = {"Default", "Dark", "Light", "Neon", "Pastel", "Cyberpunk"},
     Callback = function(value)
-        pcall(function()
+        local success, err = pcall(function()
             ThemeManager:SetTheme(value)
         end)
+        if not success then
+            warn("Theme change failed: " .. tostring(err))
+        end
     end
 })
 
 SettingsRightGroup:AddButton("ResetTheme", {
     Text = "Reset Theme",
     Func = function()
-        pcall(function()
+        local success, err = pcall(function()
             ThemeManager:SetTheme("Default")
         end)
+        if not success then
+            warn("Theme reset failed: " .. tostring(err))
+        end
     end
 })
 
@@ -1259,6 +1315,8 @@ Library:OnUnload(function()
         voidSpamConnection:Disconnect()
         voidSpamConnection = nil
     end
+    voidSpamTimer = 0
+    
     ragebotEnabled = false
     dodgeEnabled = false
     flyEnabled = false
@@ -1276,31 +1334,45 @@ Library:OnUnload(function()
         fovCircle = nil
     end
     
-    table.clear(targetTable)
-    projectileCache = {}
+    if characterAddedConnection then
+        characterAddedConnection:Disconnect()
+        characterAddedConnection = nil
+    end
+    
+    if descendantAddedConnection then
+        descendantAddedConnection:Disconnect()
+        descendantAddedConnection = nil
+    end
+    
+    for i = #targetTable, 1, -1 do
+        table.remove(targetTable, i)
+    end
+    
+    for i = #projectileCache, 1, -1 do
+        table.remove(projectileCache, i)
+    end
 end)
 
-pcall(function()
+local success4, err4 = pcall(function()
     SaveManager:Load()
     ThemeManager:Load()
 end)
+if not success4 then
+    warn("Initial load failed: " .. tostring(err4))
+end
 
 Library:SetWatermarkVisibility(true)
 Library:SetWatermark("Canvas - Left | Ready")
 
-LocalPlayer.CharacterAdded:Connect(function()
+characterAddedConnection = LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(0.5)
-    local char, hrp, humanoid = GetCharacter()
-    if char and humanoid then
+    local character, hrp, humanoid = GetCharacter()
+    if character and humanoid then
         if flyEnabled then
             humanoid.PlatformStand = true
         end
         if noclipEnabled then
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
-                end
-            end
+            ApplyNoclip(character)
         end
         if speedEnabled then
             humanoid.WalkSpeed = walkSpeed
@@ -1310,9 +1382,20 @@ LocalPlayer.CharacterAdded:Connect(function()
         end
     end
     UpdateProjectileCache()
+    
+    if descendantAddedConnection then
+        descendantAddedConnection:Disconnect()
+        descendantAddedConnection = nil
+    end
+    
+    descendantAddedConnection = char.DescendantAdded:Connect(function(descendant)
+        if noclipEnabled and descendant:IsA("BasePart") then
+            descendant.CanCollide = false
+        end
+    end)
 end)
 
-RunService.RenderStepped:Connect(function()
+local function OnRenderStep()
     pcall(function()
         if ragebotEnabled then
             Ragebot()
@@ -1355,4 +1438,18 @@ RunService.RenderStepped:Connect(function()
             end
         end
     end)
-end)
+end
+
+RunService.RenderStepped:Connect(OnRenderStep)
+
+if LocalPlayer.Character then
+    task.wait(0.5)
+    local char = LocalPlayer.Character
+    if char then
+        descendantAddedConnection = char.DescendantAdded:Connect(function(descendant)
+            if noclipEnabled and descendant:IsA("BasePart") then
+                descendant.CanCollide = false
+            end
+        end)
+    end
+end
